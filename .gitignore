@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.DS_Store
+*.md.out
+bench/data/
+bench/results/
+
+# Local secrets (API keys) never go in git
+.env
+.env.*

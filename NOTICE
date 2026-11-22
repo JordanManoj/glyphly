@@ -1,0 +1,18 @@
+glyphly
+Copyright 2026 Jordan Manoj
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Model files
+-----------
+glyphly downloads, on first use, two neural-network model files that are not part of
+this repository:
+
+- PP-OCRv6 small text detection and text recognition models, from PaddleOCR
+  (https://github.com/PaddlePaddle/PaddleOCR), Copyright (c) PaddlePaddle Authors,
+  licensed under the Apache License, Version 2.0;
+- in the ONNX format published by the RapidOCR project
+  (https://github.com/RapidAI/RapidOCR), licensed under the Apache License, Version 2.0.
+
+glyphly's own code (detection post-processing, line straightening, decoding, word
+positions, benchmark) is written from scratch.

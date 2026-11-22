@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      GLYPHLY_HOME: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - name: Cache the model files (keyed on their pinned fingerprints)
+        uses: actions/cache@v4
+        with:
+          path: .models
+          key: glyphly-models-${{ hashFiles('src/glyphly/models.py') }}
+      - run: uv run glyphly download
+      - run: uv run pytest
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - name: Install the wheel in a clean environment and read an image
+        env:
+          GLYPHLY_HOME: /tmp/models
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke dist/*.whl
+          /tmp/smoke/bin/glyphly --version
+          /tmp/smoke/bin/glyphly download
+          /tmp/smoke/bin/python -c "from PIL import Image, ImageDraw, ImageFont; im = Image.new('RGB', (600, 120), 'white'); ImageDraw.Draw(im).text((20, 30), 'Hello glyphly 2026', fill='black', font=ImageFont.load_default(size=40)); im.save('/tmp/hello.png')"
+          /tmp/smoke/bin/glyphly read /tmp/hello.png | tee /tmp/out.txt
+          grep -q "glyphly" /tmp/out.txt

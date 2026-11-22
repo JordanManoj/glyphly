@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "glyphly"
+dynamic = ["version"]
+description = "OCR for Python with nothing to install but the package: words, boxes and confidences, no Tesseract."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [{ name = "Jordan Manoj" }]
+keywords = ["ocr", "text-recognition", "onnx", "document-ai", "scan", "pdf"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Typing :: Typed",
+]
+# Everything installs from PyPI wheels: no system programs, no OpenCV.
+dependencies = [
+    "numpy>=1.24,<3",
+    "onnxruntime>=1.17,<2",
+    "pillow>=10.0,<14",
+]
+
+[project.scripts]
+glyphly = "glyphly.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/JordanManoj/glyphly"
+Source = "https://github.com/JordanManoj/glyphly"
+Issues = "https://github.com/JordanManoj/glyphly/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+]
+# Baselines for bench/ only, never shipped.
+bench = [
+    "rapidocr>=3.0",
+]
+
+[tool.hatch.version]
+path = "src/glyphly/__about__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/glyphly"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/glyphly", "tests", "bench/*.py", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "C4", "PT"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["glyphly", "bench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
