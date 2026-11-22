@@ -10,6 +10,7 @@ import numpy as np
 
 from glyphly import models
 from glyphly.detect import MAX_SIDE, TextBox, detect
+from glyphly.layout import reading_order
 from glyphly.recognize import Span, charset, recognize, word_spans
 from glyphly.types import Box, Line, Page, Word
 
@@ -124,7 +125,7 @@ class Reader:
             chars = sum(len(wd.text) for wd in words)
             conf = sum(wd.confidence * len(wd.text) for wd in words) / chars
             lines.append(Line(words, box.bounds, conf))
-        return Page(lines, w, h, steps)
+        return Page(reading_order(lines), w, h, steps)
 
 
 _default: Reader | None = None

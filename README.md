@@ -46,24 +46,25 @@ with one trained by this project is on the roadmap.
 
 ## Accuracy
 
-Measured with `bench/ocr.py`: pages rendered from known text in 5 fonts, then degraded
-like real scans (fax resolution, blur, noise, 3° skew, heavy JPEG, faint print with a
-shadow, a phone photo), so the ground truth is exact. Development split, character error
-rate (lower is better), first run:
+Measured with `bench/ocr.py` on pages rendered from known text in 5 fonts, so the ground
+truth is exact. Held-out test split (pages never used while building), character error
+rate, lower is better:
 
 | | glyphly | gleanly + Tesseract | RapidOCR (same models) | plain Tesseract |
 | --- | --- | --- | --- | --- |
-| Times, Arial, Courier, 8 conditions | ~0.05%, worst page 0.3% | 0.6–0.8% | 4.3% | 16% |
+| Standard: clean, fax, blur, noise, 3° skew, JPEG, faint + shadow, phone photo (120 pages) | **under 0.05%** | 0.6% | 5.1% | 16.1% |
+| Hard: small print, white on dark, colour, perspective, cheap scan, two columns, table (105 pages) | **0.1%** | 0.0% | 15.1% | 0.5% |
 
-The held-out test split and the harder page types (tables, two columns, white on dark,
-small print) are being measured next; results will be listed here. These are generated
-pages: real scans and a comparison with paid OCR services are planned before any claim
-of "best".
+Two columns are read one after the other and tables row by row (each row on one line).
+Weak spot left on the hard suite: cheap scans (0.3%). These are generated pages: real
+scans and a comparison with docTR, EasyOCR, PaddleOCR and a paid OCR service come next
+(see [docs/review.md](docs/review.md)).
 
 ## Status and roadmap
 
 - [x] Engine on ONNX Runtime with no system dependencies; rotated lines; word boxes
-- [ ] Held-out and hard-suite results; multi-column reading order; tables
+- [x] Held-out and hard-suite results; two-column reading order; table rows
+- [ ] Table structure (cells), page orientation, real-scan benchmark
 - [ ] Release on PyPI; used by [gleanly](https://github.com/JordanManoj/gleanly) for OCR
 - [ ] glyphly's own trained recognition model
 - [ ] Real-scan benchmark; comparison with Docling, Marker and a paid OCR service

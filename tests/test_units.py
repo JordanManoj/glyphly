@@ -109,3 +109,33 @@ def test_model_fingerprint_is_checked(tmp_path: Path, monkeypatch: pytest.Monkey
     with pytest.raises(models.ModelError, match="glyphly download"):
         models.ensure(fake, download=False)
     assert not (tmp_path / "m.onnx").exists()  # a bad file is never kept
+
+
+def test_mirrors_are_tried_in_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLYPHLY_HOME", str(tmp_path))
+    monkeypatch.setenv("GLYPHLY_MODEL_URL", "https://mirror.example/models/")
+    good = b"model bytes"
+    fake = models.ModelFile("m.onnx", "https://publisher.example/m.onnx",
+                            hashlib.sha256(good).hexdigest(), 0.0)  # fmt: skip
+    assert fake.sources()[0] == "https://mirror.example/models/m.onnx"
+    assert fake.sources()[-1] == "https://publisher.example/m.onnx"
+    tried: list[str] = []
+
+    def fetch(url: str, path: Path, sha256: str) -> str | None:
+        tried.append(url)
+        if "publisher" not in url:
+            return "HTTP Error 404"
+        path.write_bytes(good)
+        return None
+
+    monkeypatch.setattr(models, "_fetch", fetch)
+    assert models.ensure(fake).read_bytes() == good
+    assert tried == fake.sources()  # own mirror, GitHub, then the publisher
+
+
+def test_all_mirrors_failing_names_each(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GLYPHLY_HOME", str(tmp_path))
+    fake = models.ModelFile("m.onnx", "https://publisher.example/m.onnx", "0" * 64, 0.0)
+    monkeypatch.setattr(models, "_fetch", lambda url, path, sha: "offline")
+    with pytest.raises(models.ModelError, match=r"publisher.example"):
+        models.ensure(fake)

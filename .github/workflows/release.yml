@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GLYPHLY_HOME: ${{ github.workspace }}/.models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run glyphly download
+      - run: uv run pytest
+      - name: Check the tag matches the package version
+        run: |
+          version=$(uv run python -c "import glyphly; print(glyphly.__version__)")
+          test "v$version" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != v$version"; exit 1; }
+      - run: uv build
+      - name: Install the wheel as a new user would and read an image
+        run: |
+          for pre in "" "--prerelease allow"; do
+            rm -rf /tmp/smoke && uv venv /tmp/smoke
+            uv pip install --python /tmp/smoke $pre dist/*.whl
+            /tmp/smoke/bin/python -c "from PIL import Image, ImageDraw, ImageFont; im = Image.new('RGB', (600, 120), 'white'); ImageDraw.Draw(im).text((20, 30), 'Hello glyphly 2026', fill='black', font=ImageFont.load_default(size=40)); im.save('/tmp/hello.png')"
+            /tmp/smoke/bin/glyphly read /tmp/hello.png | grep -q "glyphly"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing, no API token stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
