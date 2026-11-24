@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
 import math
+import statistics
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -11,7 +13,7 @@ import numpy as np
 from glyphly import models
 from glyphly.detect import MAX_SIDE, TextBox, detect
 from glyphly.layout import reading_order
-from glyphly.recognize import Span, charset, recognize, word_spans
+from glyphly.recognize import Decoded, Span, charset, recognize, word_spans
 from glyphly.types import Box, Line, Page, Word
 
 if TYPE_CHECKING:
@@ -90,14 +92,232 @@ def _session(path: Path) -> Any:
     return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
 
 
-class Reader:
-    """Loads the models once; ``read`` can then be called on many images."""
+# A line looks misread (wrong script) when it decodes to far fewer characters than its
+# width holds, or with low confidence. Wide characters (Chinese, Japanese, Korean) count
+# double. Measured on bench/languages.py: well-read lines hold about 2.3-2.9 characters
+# per line height, wrong-script lines 0-1.6.
+SPARSE = 1.8
+UNSURE = 0.9
+SWITCH = 1.15  # another script's reading must score this much higher to replace a line
+SAMPLE_LINES = 6  # suspicious lines used to find which scripts a page needs
 
-    def __init__(self, *, download: bool = True, max_side: int = MAX_SIDE) -> None:
+
+def _wide(ch: str) -> bool:
+    o = ord(ch)
+    return (
+        0x1100 <= o <= 0x11FF
+        or 0x2E80 <= o <= 0x9FFF
+        or 0xAC00 <= o <= 0xD7AF
+        or 0xF900 <= o <= 0xFAFF
+    )
+
+
+def _suspicious(dec: Decoded, crop: np.ndarray) -> bool:
+    if not dec.chars:
+        return True
+    units = sum(2 if _wide(c) else 1 for c in dec.chars)
+    per_height = units / max(1.0, crop.shape[1] / max(1, crop.shape[0]))
+    conf = sum(dec.probs) / len(dec.probs)
+    return per_height < SPARSE or conf < UNSURE
+
+
+def _score(dec: Decoded) -> float:
+    """How much confidently read text a decoding holds."""
+    return sum(dec.probs)
+
+
+GAP = 2.5  # an empty stretch wider than this many character spacings may hold a number
+TIE = 0.95  # a page-script reading within 5% of the default one counts as a tie
+# A lone short word ("мост.") is ambiguous on its own; the page's script decides more
+# easily there.
+SHORT_LINE = 8
+TIE_SHORT = 0.6
+
+
+def _x(dec: Decoded, share: float, k: int) -> float:
+    """Position of character ``k`` along its line, as a share of the line's length."""
+    return (dec.steps[k] + 0.5) / dec.n_steps / share
+
+
+def _ltr_run(ch: str) -> bool:
+    return ch.isascii() and (ch.isalnum() or ch in ".,:%/-+")
+
+
+def logical_order(chars: list[str]) -> list[str]:
+    """Right-to-left text read left to right -> reading order, numbers kept left to right."""
+    out = chars[::-1]
+    i = 0
+    while i < len(out):
+        if _ltr_run(out[i]):
+            j = i
+            while j < len(out) and _ltr_run(out[j]):
+                j += 1
+            out[i:j] = out[i:j][::-1]
+            i = j
+        else:
+            i += 1
+    return out
+
+
+class Reader:
+    """Loads the models once; ``read`` can then be called on many images.
+
+    ``lang``: ``"auto"`` (default) reads Latin-script languages, Chinese and Japanese with
+    the default model, and re-reads lines that look misread with the other script models
+    (Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil, Telugu), downloading them
+    the first time a page needs them. Give language codes (``"ru"``, ``["hi", "en"]``) to
+    load just the models those languages need.
+    """
+
+    def __init__(
+        self,
+        *,
+        lang: str | list[str] = "auto",
+        download: bool = True,
+        max_side: int = MAX_SIDE,
+    ) -> None:
+        self._download = download
         self._det = _session(models.ensure(models.DETECTOR, download=download))
         self._rec = _session(models.ensure(models.RECOGNIZER, download=download))
         self._chars = charset(self._rec)
+        self._scripts: dict[str, tuple[Any, list[str]]] = {}
         self.max_side = max_side
+        langs = [lang] if isinstance(lang, str) else list(lang)
+        self.auto = "auto" in langs
+        self.wanted = sorted({sc for code in langs if (sc := models.script_for(code))})
+        for script in self.wanted:
+            self._script(script)
+
+    def _script(self, script: str) -> tuple[Any, list[str]] | None:
+        """The recognizer for ``script``, loaded on first use; None if unavailable."""
+        if script not in self._scripts:
+            try:
+                path = models.ensure(models.SCRIPT_MODELS[script], download=self._download)
+            except models.ModelError:
+                if script in self.wanted:
+                    raise
+                return None
+            session = _session(path)
+            self._scripts[script] = (session, charset(session))
+        return self._scripts[script]
+
+    def _reread(
+        self,
+        crops: list[np.ndarray],
+        decs: list[Decoded],
+        shares: list[float],
+        steps: list[str],
+        first: list[tuple[Decoded, float]],
+    ) -> list[str]:
+        """Script used for each line ("" = default), re-reading lines where another wins."""
+        used = [""] * len(crops)
+        todo = list(range(len(crops)))
+        candidates = list(self.wanted)
+        if self.auto:
+            todo = [i for i in todo if _suspicious(decs[i], crops[i])]
+            if not todo:
+                return used
+            # find the scripts this page needs: for a sample of its suspicious lines, which
+            # script model reads each one best?
+            sample = sorted(todo, key=lambda i: -crops[i].shape[1])[:SAMPLE_LINES]
+            best: dict[int, tuple[float, str]] = {
+                i: (_score(decs[i]) * SWITCH + 1, "") for i in sample
+            }
+            for script in models.SCRIPT_MODELS:
+                model = self._script(script)
+                if model is None:
+                    continue
+                got = recognize(model[0], model[1], [crops[i] for i in sample])
+                for i, (dec, _) in zip(sample, got, strict=True):
+                    if _score(dec) > best[i][0]:
+                        best[i] = (_score(dec), script)
+            wins: dict[str, int] = {}
+            for _, script in best.values():
+                if script:
+                    wins[script] = wins.get(script, 0) + 1
+            top = sorted(wins, key=lambda k: -wins[k])[:2]
+            candidates = sorted(set(candidates) | set(top))
+        # read the lines with every candidate script; each line keeps its best reading
+        readings: dict[str, list[tuple[Decoded, float]]] = {}
+        for script in candidates:
+            model = self._script(script)
+            if model is not None:
+                readings[script] = recognize(model[0], model[1], [crops[i] for i in todo])
+        switched: dict[str, int] = {}
+        for k, i in enumerate(todo):
+            floor = SWITCH * _score(decs[i]) + 1
+            for script, got in readings.items():
+                dec, share = got[k]
+                if _score(dec) > floor:
+                    floor = _score(dec)
+                    decs[i], shares[i], used[i] = dec, share, script
+            if used[i]:
+                switched[used[i]] = switched.get(used[i], 0) + 1
+        # Lines that look the same in two scripts ("MOCT." / "мост.") follow the page: when
+        # one script reads at least half of the page's lines, the other lines are read with
+        # it too and keep that reading unless the default one is clearly better.
+        page_script = max(switched, key=lambda k: switched[k]) if switched else ""
+        if self.auto and page_script and switched[page_script] * 2 >= len(crops):
+            model = self._script(page_script)
+            rest = [i for i in range(len(crops)) if not used[i]]
+            if model is not None and rest:
+                got = recognize(model[0], model[1], [crops[i] for i in rest])
+                for i, (dec, share) in zip(rest, got, strict=True):
+                    tie = TIE_SHORT if len(decs[i].chars) <= SHORT_LINE else TIE
+                    if dec.chars and _score(dec) >= tie * _score(decs[i]):
+                        decs[i], shares[i], used[i] = dec, share, page_script
+                        switched[page_script] += 1
+        # The Arabic-script model drops digits; the default model reads them well. Put the
+        # default reading's numbers back at their place on the line.
+        for i, script in enumerate(used):
+            if script in models.RTL_SCRIPTS:
+                decs[i] = self._fill_gaps(crops[i], decs[i], shares[i])
+        for script, n in switched.items():
+            steps.append(f"{n} lines read with the {script} model")
+        return used
+
+    def _fill_gaps(self, crop: np.ndarray, dec: Decoded, share: float) -> Decoded:
+        """Read the empty stretches of a line (in visual order) with the default model.
+
+        The Arabic-script model skips Western digits; the gaps it leaves are cut out and
+        read by the default model, which reads numbers well, and only digits (with their
+        separators) are put back, between spaces.
+        """
+        if len(dec.chars) < 2:
+            return dec
+        xs = [_x(dec, share, k) for k in range(len(dec.chars))]
+        spacing = statistics.median(b - a for a, b in itertools.pairwise(xs))
+        gaps = [
+            (k, a + spacing / 2, b - spacing / 2)
+            for k, (a, b) in enumerate(itertools.pairwise(xs))
+            if b - a > GAP * spacing
+        ]
+        if not gaps:
+            return dec
+        w = crop.shape[1]
+        pieces = [crop[:, max(0, int(a * w)) : min(w, int(np.ceil(b * w)))] for _, a, b in gaps]
+        got = recognize(self._rec, self._chars, pieces)
+        chars, steps, probs = list(dec.chars), list(dec.steps), list(dec.probs)
+        for (k, _, _), (piece, _) in sorted(zip(gaps, got, strict=True), key=lambda g: -g[0][0]):
+            digits = [
+                (c, p) for c, p in zip(piece.chars, piece.probs, strict=True)
+                if c.isdigit() or c in ".,%/-"
+            ]  # fmt: skip
+            if not any(c.isdigit() for c, _ in digits):
+                continue
+            at = k + 1  # insert after character k (visual order)
+            step = steps[k]
+            new = [(" ", 1.0), *digits, (" ", 1.0)]
+            chars[at:at] = [c for c, _ in new]
+            probs[at:at] = [p for _, p in new]
+            steps[at:at] = [step] * len(new)
+        keep = [i for i in range(len(chars)) if not (chars[i] == " " and i and chars[i - 1] == " ")]
+        return Decoded(
+            [chars[i] for i in keep],
+            [steps[i] for i in keep],
+            [probs[i] for i in keep],
+            dec.n_steps,
+        )
 
     def read(self, image: ImageLike) -> Page:
         rgb = to_rgb(image)
@@ -107,10 +327,12 @@ class Reader:
         steps = [f"{len(boxes)} text lines found" + (f", {tilted} tilted" if tilted else "")]
         boxes.sort(key=lambda b: (b.cy, b.cx))
         crops = [cut(rgb, b) for b in boxes]
+        first = recognize(self._rec, self._chars, crops)
+        decs = [d for d, _ in first]
+        shares = [s for _, s in first]
+        used = self._reread(crops, decs, shares, steps, first)
         lines: list[Line] = []
-        for box, crop, (dec, share) in zip(
-            boxes, crops, recognize(self._rec, self._chars, crops), strict=True
-        ):
+        for box, crop, dec, share, script in zip(boxes, crops, decs, shares, used, strict=True):
             length = float(crop.shape[1]) if box.angle == 0.0 else box.length
             spans = word_spans(dec, length / share, length)
             if not spans:
@@ -122,9 +344,14 @@ class Reader:
                     Word(wd.text, (x0 + sp.u0, wd.box[1], x0 + sp.u1, wd.box[3]), wd.confidence)
                     for wd, sp in zip(words, spans, strict=True)
                 ]
+            if script in models.RTL_SCRIPTS:  # reading order: right to left
+                words = [
+                    Word("".join(logical_order(list(wd.text))), wd.box, wd.confidence)
+                    for wd in reversed(words)
+                ]
             chars = sum(len(wd.text) for wd in words)
             conf = sum(wd.confidence * len(wd.text) for wd in words) / chars
-            lines.append(Line(words, box.bounds, conf))
+            lines.append(Line(words, box.bounds, conf, script or "default"))
         return Page(reading_order(lines), w, h, steps)
 
 
@@ -139,4 +366,4 @@ def read(image: ImageLike) -> Page:
     return _default.read(image)
 
 
-__all__ = ["Reader", "cut", "read", "to_rgb"]
+__all__ = ["Reader", "cut", "logical_order", "read", "to_rgb"]

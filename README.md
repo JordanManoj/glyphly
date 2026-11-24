@@ -60,11 +60,41 @@ Weak spot left on the hard suite: cheap scans (0.3%). These are generated pages:
 scans and a comparison with docTR, EasyOCR, PaddleOCR and a paid OCR service come next
 (see [docs/review.md](docs/review.md)).
 
+## Languages
+
+`glyphly.read()` works out the script by itself: Latin-script languages, Chinese and
+Japanese are read by the default model; lines that look misread are re-read with the
+matching script model (downloaded the first time a page needs it, about 8 MB each, checked
+by SHA-256), right-to-left lines are put in reading order, and numbers skipped by the
+Arabic-script model are read back in. Or choose: `Reader(lang="ru")`,
+`Reader(lang=["hi", "en"])`, `glyphly read scan.png --lang ar`; `glyphly download --all`
+fetches every model for offline use.
+
+Measured with `bench/languages.py` (the same short notice with a date and an amount,
+written in each language and drawn by a browser so every script is shaped correctly),
+character error rate:
+
+| Script | Languages measured | CER |
+| --- | --- | --- |
+| Latin | English, German, French, Spanish, Portuguese, Polish, Turkish | 0% |
+| Latin | Vietnamese | 5.4% (stacked accents dropped) |
+| Chinese, Japanese, Korean | zh, ja, ko | 0% |
+| Greek, Thai, Tamil | el, th, ta | 0% |
+| Cyrillic | Russian, Ukrainian | 5.0%, 1.2% |
+| Devanagari, Telugu | Hindi, Telugu | 1.4%, 4.2% |
+| Arabic script | Arabic, Persian | 5.3%, 6.3% |
+| **Not supported yet** | Hebrew, Bengali (and other scripts without an open model) | 83%, 76% |
+
+Average over the 20 supported languages: 1.4%. One sentence per language is a smoke test,
+not a full benchmark: real documents per language are on the roadmap.
+
 ## Status and roadmap
 
 - [x] Engine on ONNX Runtime with no system dependencies; rotated lines; word boxes
 - [x] Held-out and hard-suite results; two-column reading order; table rows
+- [x] 20 languages in 11 scripts, detected automatically
 - [ ] Table structure (cells), page orientation, real-scan benchmark
+- [ ] Hebrew, Bengali and other scripts without an open model
 - [ ] Release on PyPI; used by [gleanly](https://github.com/JordanManoj/gleanly) for OCR
 - [ ] glyphly's own trained recognition model
 - [ ] Real-scan benchmark; comparison with Docling, Marker and a paid OCR service

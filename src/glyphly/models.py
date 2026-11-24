@@ -115,8 +115,74 @@ def _fetch(url: str, path: Path, sha256: str) -> str | None:
         tmp.unlink(missing_ok=True)
 
 
-def download_all() -> list[Path]:
-    return [ensure(m) for m in (DETECTOR, RECOGNIZER)]
+def download_all(*, scripts: bool = False) -> list[Path]:
+    """Fetch the default models, and every script model too when ``scripts`` is true."""
+    files = [DETECTOR, RECOGNIZER, *(SCRIPT_MODELS.values() if scripts else ())]
+    return [ensure(m) for m in files]
 
 
-__all__ = ["DETECTOR", "RECOGNIZER", "ModelError", "ModelFile", "download_all", "ensure", "home"]
+# --------------------------------------------------------------------------- scripts
+# The default recognizer reads Latin-script languages, Chinese and Japanese. Other
+# scripts have their own open recognizers (PaddleOCR PP-OCRv5 mobile, Apache-2.0, ONNX by
+# RapidOCR), downloaded only when a page needs them.
+_V5 = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec"
+
+
+def _v5(name: str, sha256: str, size_mb: float) -> ModelFile:
+    file = f"{name}_PP-OCRv5_rec_mobile.onnx"
+    return ModelFile(file, f"{_V5}/{file}", sha256, size_mb)
+
+
+SCRIPT_MODELS: dict[str, ModelFile] = {
+    "cyrillic": _v5(
+        "cyrillic", "90f761b4bfcce0c8c561c0cb5c887b0971d3ec01c32164bdf7374a35b0982711", 8.1
+    ),
+    "greek": _v5("el", "b4368bccd557123c702b7549fee6cd1e94b581337d1c9b65310f109131542b7f", 7.8),
+    "arabic": _v5(
+        "arabic", "c1192e632d0baa9146ae5b756a0e635e3dc63c1733737ebfd1629e87144e9295", 8.0
+    ),
+    "devanagari": _v5(
+        "devanagari", "d6f0a906580e3fa6b324a318718f1f31f268b6ea8ef985f91c2012a37f52c91e", 7.9
+    ),
+    "korean": _v5(
+        "korean", "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b", 13.5
+    ),
+    "thai": _v5("th", "de541dd83161c241ff426f7ecfd602a0ba77d686cf3ab9a6c255ea82fd08006e", 7.9),
+    "tamil": _v5("ta", "a42448808b7dea87597336f12438935f40353f1949e8360acd9e06b4da21bfe1", 7.9),
+    "telugu": _v5("te", "a3690451b50028a09a3316a1274f7c05728151ea3f8fd392696397a7fefcbd92", 7.9),
+}
+RTL_SCRIPTS = {"arabic"}
+
+# ISO 639-1 codes -> script model. Languages not listed (Latin-script languages, Chinese,
+# Japanese) are read by the default recognizer.
+_LANGS = {
+    "cyrillic": "ru uk be bg sr mk kk ky mn tg tt ba cv ce os ab",
+    "greek": "el",
+    "arabic": "ar fa ur ug ps sd ku ckb",
+    "devanagari": "hi mr ne sa mai bho new",
+    "korean": "ko",
+    "thai": "th",
+    "tamil": "ta",
+    "telugu": "te",
+}
+LANG_SCRIPT: dict[str, str] = {code: s for s, codes in _LANGS.items() for code in codes.split()}
+
+
+def script_for(lang: str) -> str | None:
+    """The script model a language needs, or None if the default recognizer reads it."""
+    return LANG_SCRIPT.get(lang.lower().split("-")[0])
+
+
+__all__ = [
+    "DETECTOR",
+    "LANG_SCRIPT",
+    "RECOGNIZER",
+    "RTL_SCRIPTS",
+    "SCRIPT_MODELS",
+    "ModelError",
+    "ModelFile",
+    "download_all",
+    "ensure",
+    "home",
+    "script_for",
+]

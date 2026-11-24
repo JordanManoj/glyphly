@@ -23,7 +23,7 @@ how we know it is fixed. Re-checked at every milestone.
 | G3 | Not compared with the strongest free and paid engines | docTR, EasyOCR, PaddleOCR, Tesseract, one paid OCR on the shared sample | Comparison table in README | todo |
 | G4 | No page orientation (90/180/270 degrees), vertical or curved text | Orientation check (try rotations on a few lines, keep the most confident) | Rotated pages read like upright ones | todo |
 | G5 | No table structure or paragraphs in the output | Rows/cells from the ruling lines and cell alignment; paragraph blocks | Tables come out as rows of cells | todo |
-| G6 | Languages beyond English untested (the model knows 18,708 characters) | Non-English pages in the benchmark; a language note in the README | Results per script published | todo |
+| G6 | Languages beyond English untested (the model knows 18,708 characters) | Non-English pages in the benchmark; a language note in the README | Results per script published | done v0 (2026-11-24: 20 languages / 11 scripts, mean CER 1.4%; Hebrew, Bengali unsupported; one sentence per language, real documents still to do) |
 | G7 | Word boxes are approximate (from CTC positions), never checked | Benchmark word boxes against the rendered truth | Box accuracy (IoU) reported | todo |
 
 ### Trust
@@ -63,3 +63,7 @@ alongside.
 - **2026-11-23:** G1 done: XY-cut reading order (columns only between prose, table rows
   by word-height overlap, tilted lines kept apart). Held-out hard suite 0.1% (two columns
   0.0%, tables 0.1%); tilted standard pages unchanged (0.02%). G10 mirror support written.
+- **2026-11-24:** languages (G6). Default model alone: 9 of 22 languages readable (mean CER
+  43.5%). Added 8 script models chosen per line by score, page-script ties, right-to-left
+  order and digit recovery: 20 of 22 (mean 1.4% on those). Found: confidence stays high on
+  wrong-script text (Russian read as digits at 0.97), more evidence for G8.

@@ -19,3 +19,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   then ModelScope; every file is checked against the same SHA-256.
 - Release workflow: tests, installs the wheel fresh, reads an image, then publishes with
   PyPI trusted publishing.
+- Languages: script models for Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil
+  and Telugu, chosen automatically per line (or with `lang=`), right-to-left reading order,
+  digits restored in Arabic-script lines, `Line.script`, `glyphly download --all`,
+  `glyphly read --lang`. Language benchmark (`bench/languages.py`): 20 languages, mean
+  CER 1.4%; Hebrew and Bengali not supported yet.

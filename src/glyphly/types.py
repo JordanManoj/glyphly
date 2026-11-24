@@ -22,6 +22,7 @@ class Line:
     words: list[Word]
     box: Box
     confidence: float
+    script: str = "default"  # which recognizer read it: "default", "cyrillic", "arabic", ...
 
     @property
     def text(self) -> str:

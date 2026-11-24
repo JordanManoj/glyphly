@@ -18,7 +18,10 @@ def _build_parser() -> argparse.ArgumentParser:
     read = sub.add_parser("read", help="read the text in one or more images")
     read.add_argument("images", nargs="+")
     read.add_argument("--json", action="store_true", help="lines, words, boxes and confidences")
-    sub.add_parser("download", help="fetch the model files now (for offline use later)")
+    dl = sub.add_parser("download", help="fetch the model files now (for offline use later)")
+    dl.add_argument("--all", action="store_true", help="also every script model (about 70 MB)")
+    read.add_argument("--lang", default="auto",
+                      help="auto (default) or language codes, e.g. ru or hi,en")  # fmt: skip
     return parser
 
 
@@ -32,12 +35,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.command == "download":
-            for path in models.download_all():
+            for path in models.download_all(scripts=args.all):
                 print(f"ok: {path}")
             return 0
         from glyphly.engine import Reader
 
-        reader = Reader()
+        lang = args.lang if args.lang == "auto" else args.lang.split(",")
+        reader = Reader(lang=lang)
         for name in args.images:
             page = reader.read(name)
             if args.json:

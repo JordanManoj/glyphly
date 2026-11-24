@@ -39,7 +39,7 @@ jobs:
         with:
           path: .models
           key: glyphly-models-${{ hashFiles('src/glyphly/models.py') }}
-      - run: uv run glyphly download
+      - run: uv run glyphly download --all
       - run: uv run pytest
 
   build:
