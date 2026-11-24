@@ -35,6 +35,7 @@ class Page:
     width: int
     height: int
     steps: list[str] = field(default_factory=list)  # what the engine did, for the record
+    rotation: int = 0  # degrees the page was turned (counter-clockwise) to read it
 
     @property
     def text(self) -> str:

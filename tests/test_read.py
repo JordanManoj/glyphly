@@ -63,3 +63,10 @@ def test_cli_json(reader: Reader, tmp_path, capsys: pytest.CaptureFixture[str]) 
     assert out["width"] == 1100
     assert _norm(" ".join(w["text"] for w in out["lines"][0]["words"])) == LINES[0]
     assert all(math.isfinite(v) for v in out["lines"][0]["box"])
+
+
+@pytest.mark.parametrize("angle", [90, 180, 270])
+def test_turned_pages_are_read_upright(reader: Reader, angle: int) -> None:
+    page = reader.read(_page().rotate(angle, expand=True, fillcolor="white"))
+    assert [_norm(line.text) for line in page.lines] == LINES
+    assert page.rotation == (360 - angle) % 360  # turned back by the opposite amount

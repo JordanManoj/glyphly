@@ -100,6 +100,7 @@ SPARSE = 1.8
 UNSURE = 0.9
 SWITCH = 1.15  # another script's reading must score this much higher to replace a line
 SAMPLE_LINES = 6  # suspicious lines used to find which scripts a page needs
+ORIENT_LINES = 4  # longest lines read to tell which way up a page is
 
 
 def _wide(ch: str) -> bool:
@@ -338,12 +339,54 @@ class Reader:
             dec.n_steps,
         )
 
+    def _sample_score(self, rgb: np.ndarray, boxes: list[TextBox], flip: bool = False) -> float:
+        """Recognition score of the page's longest lines (optionally turned 180 degrees)."""
+        longest = sorted(boxes, key=lambda b: -b.length)[:ORIENT_LINES]
+        crops = [cut(rgb, b) for b in longest]
+        if flip:
+            crops = [np.ascontiguousarray(c[::-1, ::-1]) for c in crops]
+        return sum(_score(d) for d, _ in recognize(self._rec, self._chars, crops))
+
+    def _orient(
+        self, rgb: np.ndarray, boxes: list[TextBox]
+    ) -> tuple[np.ndarray, list[TextBox], int]:
+        """Turn a sideways or upside-down page upright: (image, boxes, degrees turned).
+
+        Sideways pages show up as text lines running vertically; the page is turned 90
+        degrees both ways and the reading that scores higher wins. Upside-down pages read
+        better turned: the longest lines are read both ways up.
+        """
+        if not boxes:
+            return rgb, boxes, 0
+        vertical = sum(abs(abs(b.angle) - math.pi / 2) < math.radians(20) for b in boxes)
+        if vertical * 2 > len(boxes):
+            best = (-1.0, rgb, boxes, 0)
+            for k, degrees in ((1, 90), (3, 270)):  # np.rot90 turns counter-clockwise
+                turned = np.ascontiguousarray(np.rot90(rgb, k))
+                found = detect(self._det, turned, max_side=self.max_side)
+                score = self._sample_score(turned, found)
+                if score > best[0]:
+                    best = (score, turned, found, degrees)
+            _, rgb, boxes, degrees = best
+        else:
+            degrees = 0
+        if self._sample_score(rgb, boxes, flip=True) > SWITCH * self._sample_score(rgb, boxes) + 1:
+            rgb = np.ascontiguousarray(rgb[::-1, ::-1])
+            boxes = detect(self._det, rgb, max_side=self.max_side)
+            degrees = (degrees + 180) % 360
+        return rgb, boxes, degrees
+
     def read(self, image: ImageLike) -> Page:
         rgb = to_rgb(image)
-        h, w = rgb.shape[:2]
         boxes = detect(self._det, rgb, max_side=self.max_side)
+        rgb, boxes, rotation = self._orient(rgb, boxes)
+        h, w = rgb.shape[:2]
         tilted = sum(b.angle != 0.0 for b in boxes)
         steps = [f"{len(boxes)} text lines found" + (f", {tilted} tilted" if tilted else "")]
+        if rotation:
+            steps.insert(
+                0, f"page turned {rotation} degrees to read it; boxes refer to the turned page"
+            )
         boxes.sort(key=lambda b: (b.cy, b.cx))
         crops = [cut(rgb, b) for b in boxes]
         first = recognize(self._rec, self._chars, crops)
@@ -374,7 +417,7 @@ class Reader:
             chars = sum(len(wd.text) for wd in words)
             conf = sum(wd.confidence * len(wd.text) for wd in words) / chars
             lines.append(Line(words, box.bounds, conf, script or "default"))
-        return Page(reading_order(lines), w, h, steps)
+        return Page(reading_order(lines), w, h, steps, rotation)
 
 
 _default: Reader | None = None

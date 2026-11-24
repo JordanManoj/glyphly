@@ -19,6 +19,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   then ModelScope; every file is checked against the same SHA-256.
 - Release workflow: tests, installs the wheel fresh, reads an image, then publishes with
   PyPI trusted publishing.
+- Page orientation: sideways (90/270 degrees) and upside-down pages are turned upright
+  before reading (`Page.rotation`); a turned test page went from 73-85% wrong to 0%.
 - Calibrated confidence (`bench/confidence.py`): a long line that decoded to far fewer
   characters than its width holds is scaled down. On 179 pages with real mistakes (heavy
   blur, low resolution, noise, wrong-script readings) every page with more than 20% wrong
