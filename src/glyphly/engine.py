@@ -139,6 +139,25 @@ def _x(dec: Decoded, share: float, k: int) -> float:
     return (dec.steps[k] + 0.5) / dec.n_steps / share
 
 
+# Confidence calibration (bench/confidence.py, review item G8). The network's character
+# probabilities rank pages well but stay high on text read with the wrong script model
+# (Russian read as a few digits: 0.97). A long line that decoded to far fewer characters
+# than its width holds is scaled down by how sparse it is. On the study set, pages with
+# more than 20% wrong characters fell below 0.8 in 14 of 14 cases (9 before) while no
+# well-read page went below 0.96. Short lines (table cells, single words) are exempt.
+DENSE = 2.0  # characters per line height in a normally read line (wide characters x2)
+LONG_LINE = 6.0  # only lines at least this many heights long are judged
+
+
+def _density_factor(words: list[Word], crop: np.ndarray) -> float:
+    aspect = crop.shape[1] / max(1, crop.shape[0])
+    if aspect < LONG_LINE:
+        return 1.0
+    text = "".join(w.text for w in words)
+    units = sum(2 if _wide(c) else 1 for c in text) + max(0, len(words) - 1)
+    return min(1.0, units / aspect / DENSE)
+
+
 def _ltr_run(ch: str) -> bool:
     return ch.isascii() and (ch.isalnum() or ch in ".,:%/-+")
 
@@ -349,6 +368,9 @@ class Reader:
                     Word("".join(logical_order(list(wd.text))), wd.box, wd.confidence)
                     for wd in reversed(words)
                 ]
+            factor = _density_factor(words, crop)
+            if factor < 1.0:
+                words = [Word(wd.text, wd.box, wd.confidence * factor) for wd in words]
             chars = sum(len(wd.text) for wd in words)
             conf = sum(wd.confidence * len(wd.text) for wd in words) / chars
             lines.append(Line(words, box.bounds, conf, script or "default"))

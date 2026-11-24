@@ -139,3 +139,16 @@ def test_all_mirrors_failing_names_each(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(models, "_fetch", lambda url, path, sha: "offline")
     with pytest.raises(models.ModelError, match=r"publisher.example"):
         models.ensure(fake)
+
+
+def test_sparse_long_line_is_marked_unsure() -> None:
+    from glyphly.engine import _density_factor
+    from glyphly.types import Word
+
+    crop = np.zeros((40, 1600, 3), dtype=np.uint8)  # a line 40 heights long
+    full = [Word("x" * 9, (0, 0, 1, 1), 1.0) for _ in range(9)]  # ~89 characters: normal
+    sparse = [Word("14", (0, 0, 1, 1), 1.0), Word("2026", (0, 0, 1, 1), 1.0)]  # wrong script
+    assert _density_factor(full, crop) == 1.0
+    assert _density_factor(sparse, crop) < 0.2
+    cell = np.zeros((40, 120, 3), dtype=np.uint8)  # a short table cell is never judged
+    assert _density_factor([Word("96", (0, 0, 1, 1), 1.0)], cell) == 1.0

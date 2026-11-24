@@ -30,7 +30,7 @@ how we know it is fixed. Re-checked at every milestone.
 
 | # | Weakness | Work | Done when | Status |
 | --- | --- | --- | --- | --- |
-| G8 | Confidence does not predict errors (Spearman 0.10 vs 0.50 for gleanly + Tesseract) | Per-character minimum, low-probability character count, detection score, agreement checks | Spearman >= 0.6 on the benchmark | todo |
+| G8 | Confidence does not predict errors (Spearman 0.10 vs 0.50 for gleanly + Tesseract) | Per-character minimum, low-probability character count, detection score, agreement checks | Spearman >= 0.6 on the benchmark | done v0 (2026-11-24: the 0.10 came from a set with almost no mistakes; on 179 pages with real ones: AUROC 0.997 for spotting bad pages, Spearman 0.63 dev / 0.45 test; calibrated so every page over 20% wrong is below 0.8, 14/14, none of the good ones) |
 
 ### Speed and availability
 
@@ -67,3 +67,6 @@ alongside.
   43.5%). Added 8 script models chosen per line by score, page-script ties, right-to-left
   order and digit recovery: 20 of 22 (mean 1.4% on those). Found: confidence stays high on
   wrong-script text (Russian read as digits at 0.97), more evidence for G8.
+- **2026-11-24:** G8. Confidence already ranked bad pages well (AUROC 0.996) but its values
+  were too high on wrong-script text; long sparse lines are now scaled down, so gleanly's
+  0.8 warning fires on all 14 badly misread pages and on none of the good ones.

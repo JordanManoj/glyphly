@@ -19,6 +19,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   then ModelScope; every file is checked against the same SHA-256.
 - Release workflow: tests, installs the wheel fresh, reads an image, then publishes with
   PyPI trusted publishing.
+- Calibrated confidence (`bench/confidence.py`): a long line that decoded to far fewer
+  characters than its width holds is scaled down. On 179 pages with real mistakes (heavy
+  blur, low resolution, noise, wrong-script readings) every page with more than 20% wrong
+  characters now scores below 0.8 (14 of 14, was 9), no well-read page below 0.96, AUROC
+  0.997; Russian read with the wrong model 0.97 -> 0.48.
 - Languages: script models for Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil
   and Telugu, chosen automatically per line (or with `lang=`), right-to-left reading order,
   digits restored in Arabic-script lines, `Line.script`, `glyphly download --all`,
