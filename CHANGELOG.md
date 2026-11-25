@@ -4,6 +4,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [0.1.0a1] - 2026-11-25
+
 ### Added
 
 - First engine: PP-OCRv6 small detection and recognition models on ONNX Runtime, with
