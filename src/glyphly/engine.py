@@ -201,6 +201,7 @@ class Reader:
         self._rec = _session(models.ensure(models.RECOGNIZER, download=download))
         self._chars = charset(self._rec)
         self._scripts: dict[str, tuple[Any, list[str]]] = {}
+        self._missing: set[str] = set()  # script models that could not be loaded
         self.max_side = max_side
         langs = [lang] if isinstance(lang, str) else list(lang)
         self.auto = "auto" in langs
@@ -216,6 +217,7 @@ class Reader:
             except models.ModelError:
                 if script in self.wanted:
                     raise
+                self._missing.add(script)
                 return None
             session = _session(path)
             self._scripts[script] = (session, charset(session))
@@ -251,6 +253,12 @@ class Reader:
                 for i, (dec, _) in zip(sample, got, strict=True):
                     if _score(dec) > best[i][0]:
                         best[i] = (_score(dec), script)
+            if self._missing:
+                steps.append(
+                    f"{len(todo)} lines may be in another script, but these models are not "
+                    f"available: {', '.join(sorted(self._missing))} "
+                    "(run `glyphly download --all` once while online)"
+                )
             wins: dict[str, int] = {}
             for _, script in best.values():
                 if script:

@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from glyphly import ModelError, Reader
 from glyphly.engine import logical_order
-from glyphly.models import SCRIPT_MODELS, script_for
+from glyphly.models import SCRIPT_MODELS, home, script_for
 
 
 def test_language_codes_map_to_scripts() -> None:
@@ -56,12 +56,11 @@ def test_auto_reads_a_russian_page(reader: Reader) -> None:
     font = _cyrillic_font()
     if font is None:
         pytest.skip("no font with Cyrillic letters on this machine")
+    if not (home() / SCRIPT_MODELS["cyrillic"].name).exists():
+        pytest.skip("the Cyrillic model is not downloaded (glyphly download --all)")
     img = Image.new("RGB", (1000, 140), "white")
     ImageDraw.Draw(img).text((30, 40), TEXT, fill="black", font=font)
-    try:
-        page = reader.read(img)
-    except ModelError:
-        pytest.skip("the Cyrillic model is not downloaded")
+    page = reader.read(img)
     assert " ".join(page.text.split()) == TEXT
     assert page.lines[0].script == "cyrillic"
     assert any("cyrillic" in s for s in page.steps)
