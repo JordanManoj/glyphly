@@ -252,6 +252,7 @@ class Reader:
         self._scripts: dict[str, ReadFn] = {}
         self._missing: set[str] = set()  # script models that could not be loaded
         self._last_word: str | None = None  # word script that won the previous page
+        self._disabled: set[str] = set()  # scripts never used (benchmarks compare without)
         self._word_lru: list[str] = []  # loaded word models, least recently used first
         self.max_side = max_side
         langs = [lang] if isinstance(lang, str) else list(lang)
@@ -274,6 +275,8 @@ class Reader:
 
     def _script(self, script: str) -> ReadFn | None:
         """The recognizer for ``script``, loaded on first use; None if unavailable."""
+        if script in self._disabled:
+            return None
         if script not in self._scripts:
             try:
                 path = models.ensure(models.SCRIPT_MODELS[script], download=self._download)

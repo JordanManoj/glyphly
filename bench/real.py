@@ -195,7 +195,7 @@ def _glyphly(base: bool) -> OcrFn:
     """glyphly in auto mode; ``base`` leaves out the word-level (PARSeq) script models, i.e.
     glyphly 0.1.0a1, for before/after comparisons."""
     from glyphly import Reader
-    from glyphly.models import SCRIPT_MODELS
+    from glyphly.models import WORD_SCRIPTS
 
     holder: dict[str, Reader] = {}
 
@@ -203,9 +203,7 @@ def _glyphly(base: bool) -> OcrFn:
         if "r" not in holder:
             holder["r"] = Reader()
             if base:
-                for script, model in SCRIPT_MODELS.items():
-                    if "parseq" in model.name:
-                        holder["r"]._scripts[script] = None  # type: ignore[assignment]
+                holder["r"]._disabled = set(WORD_SCRIPTS)
         page = holder["r"].read(img)
         return page.text, page.confidence
 
