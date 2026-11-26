@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import math
 import statistics
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,7 @@ from glyphly.detect import MAX_SIDE, TextBox, detect
 from glyphly.layout import reading_order
 from glyphly.recognize import Decoded, Span, charset, recognize, word_spans
 from glyphly.types import Box, Line, Page, Word
+from glyphly.words import WordModel, is_word_model, recognize_words
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -84,12 +86,42 @@ def _word_box(box: TextBox, span: Span) -> Box:
     return min(xs), min(ys), max(xs), max(ys)
 
 
+ReadFn = Callable[[list[np.ndarray]], list[tuple[Decoded, float]]]
+
+
+def _reader(session: Any) -> ReadFn:
+    """Line crops -> readings, for a line recognizer (CTC) or a word recognizer (PARSeq)."""
+    if is_word_model(session):
+        model = WordModel(session)
+        return lambda crops: recognize_words(model, crops)
+    chars = charset(session)
+    return lambda crops: recognize(session, chars, crops)
+
+
 def _session(path: Path) -> Any:
+    """An ONNX Runtime session. The graph optimisations ONNX Runtime applies on loading
+    are saved next to the model the first time (per ONNX Runtime version), so later loads
+    skip them: a word model loads in 0.7 s instead of 3 s."""
     import onnxruntime as ort
 
     opts = ort.SessionOptions()
     opts.log_severity_level = 3
-    return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+    optimized = path.with_name(f"{path.stem}.ort{ort.__version__}.onnx")
+    if optimized.exists() and optimized.stat().st_mtime >= path.stat().st_mtime:
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+        try:
+            return ort.InferenceSession(str(optimized), opts, providers=["CPUExecutionProvider"])
+        except Exception:  # unreadable leftover: rebuild it below
+            optimized.unlink(missing_ok=True)
+            opts = ort.SessionOptions()
+            opts.log_severity_level = 3
+    opts.optimized_model_filepath = str(optimized)
+    try:
+        return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+    except Exception:  # e.g. a read-only cache folder: load without saving
+        opts = ort.SessionOptions()
+        opts.log_severity_level = 3
+        return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
 
 
 # A line looks misread (wrong script) when it decodes to far fewer characters than its
@@ -127,6 +159,16 @@ def _suspicious(dec: Decoded, crop: np.ndarray) -> bool:
     per_height = units / max(1.0, crop.shape[1] / max(1, crop.shape[0]))
     conf = sum(dec.probs) / len(dec.probs)
     return per_height < SPARSE or conf < UNSURE
+
+
+WORD_TRY = 0.8  # a line read with lower mean confidence by every line model tries word models
+WORD_SURE = 0.9  # the last page's word script reading this surely stops the search
+WORD_PROBE_LINES = 2  # unsure lines read by every word model to tell the script
+WORD_CACHE = 2  # word models kept loaded between pages
+
+
+def _mean(dec: Decoded) -> float:
+    return sum(dec.probs) / len(dec.probs) if dec.probs else 0.0
 
 
 def _score(dec: Decoded) -> float:
@@ -207,8 +249,10 @@ class Reader:
         self._det = _session(models.ensure(models.DETECTOR, download=download))
         self._rec = _session(models.ensure(models.RECOGNIZER, download=download))
         self._chars = charset(self._rec)
-        self._scripts: dict[str, tuple[Any, list[str]]] = {}
+        self._scripts: dict[str, ReadFn] = {}
         self._missing: set[str] = set()  # script models that could not be loaded
+        self._last_word: str | None = None  # word script that won the previous page
+        self._word_lru: list[str] = []  # loaded word models, least recently used first
         self.max_side = max_side
         langs = [lang] if isinstance(lang, str) else list(lang)
         self.auto = "auto" in langs
@@ -216,7 +260,19 @@ class Reader:
         for script in self.wanted:
             self._script(script)
 
-    def _script(self, script: str) -> tuple[Any, list[str]] | None:
+    def _word_order(self) -> list[str]:
+        """Word scripts to try, the last page's winner first."""
+        rest = sorted(models.WORD_SCRIPTS - {self._last_word or ""})
+        return [self._last_word, *rest] if self._last_word else rest
+
+    def _keep_word_model(self, script: str) -> None:
+        """Word models are large (~125 MB each in memory): keep the WORD_CACHE most
+        recently used ones loaded, unload the rest."""
+        self._word_lru = [k for k in self._word_lru if k != script] + [script]
+        while len(self._word_lru) > WORD_CACHE:
+            self._scripts.pop(self._word_lru.pop(0), None)
+
+    def _script(self, script: str) -> ReadFn | None:
         """The recognizer for ``script``, loaded on first use; None if unavailable."""
         if script not in self._scripts:
             try:
@@ -226,8 +282,7 @@ class Reader:
                     raise
                 self._missing.add(script)
                 return None
-            session = _session(path)
-            self._scripts[script] = (session, charset(session))
+            self._scripts[script] = _reader(_session(path))
         return self._scripts[script]
 
     def _reread(
@@ -252,14 +307,47 @@ class Reader:
             best: dict[int, tuple[float, str]] = {
                 i: (_score(decs[i]) * SWITCH + 1, "") for i in sample
             }
-            for script in models.SCRIPT_MODELS:
-                model = self._script(script)
-                if model is None:
+            sure = {i: _mean(decs[i]) for i in sample}  # best mean confidence so far
+            word: dict[int, tuple[float, float, str]] = dict.fromkeys(sample, (0.0, 0.0, ""))
+            # Stage 1: the small line models. Stage 2: the larger word models, only for
+            # sampled lines no line model read confidently (an Arabic or Cyrillic page
+            # never loads them; a Malayalam page does).
+            line_scripts = [k for k in models.SCRIPT_MODELS if k not in models.WORD_SCRIPTS]
+            for stage, scripts in enumerate((line_scripts, self._word_order())):
+                lines = sample if stage == 0 else [i for i in sample if sure[i] < WORD_TRY]
+                if stage == 1:  # the longest unsure lines are enough to tell the script
+                    lines = lines[:WORD_PROBE_LINES]
+                if not lines:
                     continue
-                got = recognize(model[0], model[1], [crops[i] for i in sample])
-                for i, (dec, _) in zip(sample, got, strict=True):
-                    if _score(dec) > best[i][0]:
-                        best[i] = (_score(dec), script)
+                for script in scripts:
+                    model = self._script(script)
+                    if model is None:
+                        continue
+                    got = model([crops[i] for i in lines])
+                    for i, (dec, _) in zip(lines, got, strict=True):
+                        if stage == 0:
+                            sure[i] = max(sure[i], _mean(dec))
+                            if _score(dec) > best[i][0]:
+                                best[i] = (_score(dec), script)
+                        elif _mean(dec) > word[i][0]:
+                            # Word models share one design, so their mean confidences
+                            # compare directly; a wrong-script one reads more characters
+                            # less surely and would win on summed confidence.
+                            word[i] = (_mean(dec), _score(dec), script)
+                    if stage == 1:
+                        self._keep_word_model(script)
+                        # Pages of a document share a language: when the script that won
+                        # the last page reads these lines surely, the others are skipped.
+                        if script == self._last_word and all(
+                            word[i][2] == script and word[i][0] >= WORD_SURE for i in lines
+                        ):
+                            break
+            winners = {w[2] for w in word.values() if w[2]}
+            if len(winners) == 1:
+                self._last_word = winners.pop()
+            for i, (_, score, script) in word.items():
+                if script and score > best[i][0]:
+                    best[i] = (score, script)
             if self._missing:
                 steps.append(
                     f"{len(todo)} lines may be in another script, but these models are not "
@@ -272,12 +360,15 @@ class Reader:
                     wins[script] = wins.get(script, 0) + 1
             top = sorted(wins, key=lambda k: -wins[k])[:2]
             candidates = sorted(set(candidates) | set(top))
+            # word models are large: keep only those this page uses
+            for script in models.WORD_SCRIPTS - set(candidates):
+                self._scripts.pop(script, None)
         # read the lines with every candidate script; each line keeps its best reading
         readings: dict[str, list[tuple[Decoded, float]]] = {}
         for script in candidates:
             model = self._script(script)
             if model is not None:
-                readings[script] = recognize(model[0], model[1], [crops[i] for i in todo])
+                readings[script] = model([crops[i] for i in todo])
         switched: dict[str, int] = {}
         for k, i in enumerate(todo):
             floor = SWITCH * _score(decs[i]) + 1
@@ -296,7 +387,7 @@ class Reader:
             model = self._script(page_script)
             rest = [i for i in range(len(crops)) if not used[i]]
             if model is not None and rest:
-                got = recognize(model[0], model[1], [crops[i] for i in rest])
+                got = model([crops[i] for i in rest])
                 for i, (dec, share) in zip(rest, got, strict=True):
                     tie = TIE_SHORT if len(decs[i].chars) <= SHORT_LINE else TIE
                     if dec.chars and _score(dec) >= tie * _score(decs[i]):

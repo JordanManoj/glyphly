@@ -58,7 +58,7 @@ path = "src/glyphly/__about__.py"
 packages = ["src/glyphly"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/glyphly", "tests", "bench/*.py", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "pyproject.toml"]
+include = ["src/glyphly", "tests", "bench/*.py", "tools/*.py", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "pyproject.toml"]
 
 [tool.ruff]
 line-length = 100

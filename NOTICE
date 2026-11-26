@@ -14,5 +14,15 @@ this repository:
 - in the ONNX format published by the RapidOCR project
   (https://github.com/RapidAI/RapidOCR), licensed under the Apache License, Version 2.0.
 
+- PP-OCRv5 mobile recognition models for other scripts (Cyrillic, Greek, Arabic,
+  Devanagari, Korean, Thai, Tamil, Telugu), from PaddleOCR, Apache License 2.0, in the
+  ONNX format published by RapidOCR;
+- word recognition models for Indian scripts (Malayalam and others) from IndicPhotoOCR
+  (https://github.com/Bhashini-IITJ/IndicPhotoOCR, MIT License, Copyright (c) 2024
+  Bhashini Team@IIT Jodhpur), weights published at https://github.com/anikde/STocr under
+  the Apache License, Version 2.0; converted to ONNX and int8 by glyphly
+  (tools/convert_parseq.py). PARSeq architecture by Darwin Bautista and Rowel Atienza
+  (https://github.com/baudm/parseq, Apache License 2.0).
+
 glyphly's own code (detection post-processing, line straightening, decoding, word
 positions, benchmark) is written from scratch.

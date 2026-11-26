@@ -4,6 +4,20 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+
+- Seven more Indian scripts: Malayalam, Bengali, Assamese, Kannada, Gujarati, Gurmukhi
+  (Punjabi) and Odia, read word by word with IndicPhotoOCR's PARSeq recognizers converted to
+  ONNX int8 (`tools/convert_parseq.py`). On real Malayalam book scans (Wikisource) the median
+  character error goes from about 92% to 26%.
+- Script choice in two stages: the small line models first, the word models only for lines
+  none of them reads surely, compared by mean confidence; the last page's word script is
+  tried first and at most two word models stay loaded.
+- ONNX Runtime's graph optimisations are saved next to each model on first load (word
+  models load in 0.7 s instead of 3 s).
+- Real-scan benchmark (`bench/real.py`): validated Wikisource pages in 34 languages with
+  human-proofread text; resumable runs; blank and mismatched pages are rejected.
+
 ### Fixed
 
 - A page is turned upside down only when the turned reading is confident: a Malayalam

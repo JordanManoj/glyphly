@@ -151,6 +151,44 @@ SCRIPT_MODELS: dict[str, ModelFile] = {
     "tamil": _v5("ta", "a42448808b7dea87597336f12438935f40353f1949e8360acd9e06b4da21bfe1", 7.9),
     "telugu": _v5("te", "a3690451b50028a09a3316a1274f7c05728151ea3f8fd392696397a7fefcbd92", 7.9),
 }
+# Scripts with no open line recognizer: IndicPhotoOCR's word recognizers (PARSeq, weights
+# Apache-2.0 from anikde/STocr V2.0.0), converted to ONNX and int8 by glyphly's converter
+# (tools/convert_parseq.py) and published on glyphly's GitHub release.
+_WORDS = "https://github.com/JordanManoj/glyphly/releases/download/models-v2"
+
+
+def _parseq(script: str, sha256: str, size_mb: float) -> ModelFile:
+    file = f"{script}_parseq_int8.onnx"
+    return ModelFile(file, f"{_WORDS}/{file}", sha256, size_mb)
+
+
+SCRIPT_MODELS.update(
+    {
+        "malayalam": _parseq(
+            "malayalam", "2fde548175a6b8b0af601e6a1a95990f05e04ab37cfbbff4377a8289795f4a77", 34.5
+        ),
+        "bengali": _parseq(
+            "bengali", "6ce327105e679ef69c7d7d8b4af76cf223b9546ccee7c2363c267d28c8bf7b1c", 34.5
+        ),
+        "assamese": _parseq(
+            "assamese", "c6a3687f81319e6d26e1abdaecfcda9bfdd8c8439cb0db578cbcfdf9e9640d9a", 34.5
+        ),
+        "kannada": _parseq(
+            "kannada", "08549f036b552bf100e8232f7c2ff4281020d06fa731d3684a7f3c0aa63d7ed4", 34.4
+        ),
+        "gujarati": _parseq(
+            "gujarati", "53379257d569c34ce6cca09243dc0905efd513649e24b922c35ceda2d6d61928", 34.4
+        ),
+        "gurmukhi": _parseq(
+            "punjabi", "4c2230ecf6fb3ba740f9f74478b8a9e9d0c7d88e28f51f3f22aa1157eb7a2cd5", 34.4
+        ),
+        "odia": _parseq(
+            "odia", "3079e88d2f4e1b2589ccf71820b0bea4c2f051c5ca1b4e3194f903fa4985d799", 34.4
+        ),
+    }
+)
+# scripts read word by word (larger models, tried only when no line model reads a line)
+WORD_SCRIPTS = {k for k, m in SCRIPT_MODELS.items() if "parseq" in m.name}
 RTL_SCRIPTS = {"arabic"}
 
 # ISO 639-1 codes -> script model. Languages not listed (Latin-script languages, Chinese,
@@ -164,6 +202,13 @@ _LANGS = {
     "thai": "th",
     "tamil": "ta",
     "telugu": "te",
+    "malayalam": "ml",
+    "bengali": "bn",
+    "assamese": "as",
+    "kannada": "kn",
+    "gujarati": "gu",
+    "gurmukhi": "pa",
+    "odia": "or",
 }
 LANG_SCRIPT: dict[str, str] = {code: s for s, codes in _LANGS.items() for code in codes.split()}
 
@@ -179,6 +224,7 @@ __all__ = [
     "RECOGNIZER",
     "RTL_SCRIPTS",
     "SCRIPT_MODELS",
+    "WORD_SCRIPTS",
     "ModelError",
     "ModelFile",
     "download_all",

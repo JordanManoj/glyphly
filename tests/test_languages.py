@@ -77,16 +77,33 @@ def test_latin_page_never_loads_script_models(reader: Reader) -> None:
     assert len(page.steps) == 1  # no other script was tried
 
 
-def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:
-    """Malayalam has no model yet: the page must stay upright and say it is unsure."""
-    font_path = Path(r"C:\Windows\Fonts\Nirmala.ttc")
-    if not font_path.is_file():
-        pytest.skip("no font with Malayalam letters on this machine")
-    font = ImageFont.truetype(str(font_path), 40)
+def _font_or_skip(path: str, size: int = 40) -> ImageFont.FreeTypeFont:
+    if not Path(path).is_file():
+        pytest.skip(f"font {path} is not on this machine")
+    return ImageFont.truetype(path, size)
+
+
+def test_malayalam_is_read_with_its_word_model(reader: Reader) -> None:
+    font = _font_or_skip(r"C:\Windows\Fonts\Nirmala.ttc")
+    if not (home() / SCRIPT_MODELS["malayalam"].name).exists():
+        pytest.skip("the Malayalam model is not downloaded (glyphly download --all)")
     img = Image.new("RGB", (1200, 300), "white")
     draw = ImageDraw.Draw(img)
     draw.text((30, 40), "റെക്കോർഡ് ബാറ്റിങ്ങുമായി വൈഭവ് സൂര്യവംശി", fill="black", font=font)
     draw.text((30, 160), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ മാത്രം സംഭവിക്കുന്ന", fill="black", font=font)
+    page = reader.read(img)
+    assert page.rotation == 0
+    assert all(line.script == "malayalam" for line in page.lines)
+    assert "ബാറ്റിങ്" in page.text  # PIL draws without shaping, so only some words survive
+
+
+def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:
+    """Hebrew has no model yet: the page must stay upright and say it is unsure."""
+    font = _font_or_skip(r"C:\Windows\Fonts\arial.ttf")
+    img = Image.new("RGB", (1200, 300), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((30, 40), "מועצת העיר אישרה את התקציב החדש", fill="black", font=font)
+    draw.text((30, 160), "הישיבה נערכה ביום שלישי בבוקר", fill="black", font=font)
     page = reader.read(img)
     assert page.rotation == 0
     assert page.confidence is not None
