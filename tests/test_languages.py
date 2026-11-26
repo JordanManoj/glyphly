@@ -75,3 +75,20 @@ def test_latin_page_never_loads_script_models(reader: Reader) -> None:
     page = reader.read(img)
     assert page.lines[0].script == "default"
     assert len(page.steps) == 1  # no other script was tried
+
+
+def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:
+    """Malayalam has no model yet: the page must stay upright and say it is unsure."""
+    font_path = Path(r"C:\Windows\Fonts\Nirmala.ttc")
+    if not font_path.is_file():
+        pytest.skip("no font with Malayalam letters on this machine")
+    font = ImageFont.truetype(str(font_path), 40)
+    img = Image.new("RGB", (1200, 300), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((30, 40), "റെക്കോർഡ് ബാറ്റിങ്ങുമായി വൈഭവ് സൂര്യവംശി", fill="black", font=font)
+    draw.text((30, 160), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ മാത്രം സംഭവിക്കുന്ന", fill="black", font=font)
+    page = reader.read(img)
+    assert page.rotation == 0
+    assert page.confidence is not None
+    assert page.confidence < 0.8
+    assert any("low confidence" in s for s in page.steps)

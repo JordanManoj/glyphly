@@ -4,6 +4,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Fixed
+
+- A page is turned upside down only when the turned reading is confident: a Malayalam
+  newspaper photo (no Malayalam model yet) was flipped because noise read slightly longer
+  the other way up.
+- Pages read with low confidence (below 0.8) say so in `Page.steps`, naming the likely
+  causes, including a script glyphly cannot read yet.
+
 ## [0.1.0a1] - 2026-11-25
 
 ### Added

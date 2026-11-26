@@ -101,6 +101,13 @@ UNSURE = 0.9
 SWITCH = 1.15  # another script's reading must score this much higher to replace a line
 SAMPLE_LINES = 6  # suspicious lines used to find which scripts a page needs
 ORIENT_LINES = 4  # longest lines read to tell which way up a page is
+# A page is turned 180 degrees only when the turned reading is confident. Upside-down
+# Latin text turned upright reads at ~0.99; a script no model knows reads as noise
+# (~0.5) both ways up and must stay as it is (a Malayalam newspaper photo was flipped).
+ORIENT_SURE = 0.8
+# Page confidence below this is reported in the steps (bench/confidence.py: pages with
+# over 20% wrong characters all scored below 0.8, well-read pages 0.96 or more).
+UNSURE = 0.8
 
 
 def _wide(ch: str) -> bool:
@@ -347,13 +354,17 @@ class Reader:
             dec.n_steps,
         )
 
-    def _sample_score(self, rgb: np.ndarray, boxes: list[TextBox], flip: bool = False) -> float:
-        """Recognition score of the page's longest lines (optionally turned 180 degrees)."""
+    def _sample(
+        self, rgb: np.ndarray, boxes: list[TextBox], flip: bool = False
+    ) -> tuple[float, float]:
+        """Score and mean character confidence of the page's longest lines (optionally
+        turned 180 degrees)."""
         longest = sorted(boxes, key=lambda b: -b.length)[:ORIENT_LINES]
         crops = [cut(rgb, b) for b in longest]
         if flip:
             crops = [np.ascontiguousarray(c[::-1, ::-1]) for c in crops]
-        return sum(_score(d) for d, _ in recognize(self._rec, self._chars, crops))
+        probs = [p for d, _ in recognize(self._rec, self._chars, crops) for p in d.probs]
+        return sum(probs), (sum(probs) / len(probs) if probs else 0.0)
 
     def _orient(
         self, rgb: np.ndarray, boxes: list[TextBox]
@@ -372,13 +383,14 @@ class Reader:
             for k, degrees in ((1, 90), (3, 270)):  # np.rot90 turns counter-clockwise
                 turned = np.ascontiguousarray(np.rot90(rgb, k))
                 found = detect(self._det, turned, max_side=self.max_side)
-                score = self._sample_score(turned, found)
+                score, _ = self._sample(turned, found)
                 if score > best[0]:
                     best = (score, turned, found, degrees)
             _, rgb, boxes, degrees = best
         else:
             degrees = 0
-        if self._sample_score(rgb, boxes, flip=True) > SWITCH * self._sample_score(rgb, boxes) + 1:
+        flipped, sure = self._sample(rgb, boxes, flip=True)
+        if sure >= ORIENT_SURE and flipped > SWITCH * self._sample(rgb, boxes)[0] + 1:
             rgb = np.ascontiguousarray(rgb[::-1, ::-1])
             boxes = detect(self._det, rgb, max_side=self.max_side)
             degrees = (degrees + 180) % 360
@@ -425,7 +437,15 @@ class Reader:
             chars = sum(len(wd.text) for wd in words)
             conf = sum(wd.confidence * len(wd.text) for wd in words) / chars
             lines.append(Line(words, box.bounds, conf, script or "default"))
-        return Page(reading_order(lines), w, h, steps, rotation)
+        page = Page(reading_order(lines), w, h, steps, rotation)
+        conf = page.confidence
+        if conf is not None and conf < UNSURE:
+            steps.append(
+                f"low confidence ({conf:.2f}): the image may be blurred or too small, or the "
+                "text may be in a script glyphly cannot read yet (it reads Latin, Chinese, "
+                "Japanese, Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil, Telugu)"
+            )
+        return page
 
 
 _default: Reader | None = None
