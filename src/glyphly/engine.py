@@ -170,6 +170,10 @@ WORD_TRY = 0.8  # a line read with lower mean confidence by every line model tri
 WORD_SURE = 0.9  # the last page's word script reading this surely stops the search
 WORD_PROBE_LINES = 2  # unsure lines read by every word model to tell the script
 WORD_CACHE = 2  # word models kept loaded between pages
+# Word models are overconfident: on real Malayalam, Bengali and Punjabi book scans their mean
+# character confidence is ~0.95 while 12-28% of characters are wrong (bench/real.py). Their
+# confidences are scaled so such pages land below 0.8, where readers are warned.
+WORD_CALIBRATION = 0.8
 
 
 def _mean(dec: Decoded) -> float:
@@ -535,6 +539,8 @@ class Reader:
                     for wd in reversed(words)
                 ]
             factor = _density_factor(words, crop)
+            if script in models.WORD_SCRIPTS:
+                factor *= WORD_CALIBRATION
             if factor < 1.0:
                 words = [Word(wd.text, wd.box, wd.confidence * factor) for wd in words]
             chars = sum(len(wd.text) for wd in words)

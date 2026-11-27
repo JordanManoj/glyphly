@@ -4,6 +4,14 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [0.2.0a2] - 2026-11-27
+
+### Fixed
+
+- Lines read by a word model report calibrated confidence (x 0.8): the models give ~0.95
+  while 12-28% of characters are wrong on real scans, so a Malayalam newspaper photo
+  scored 0.97 and looked reliable.
+
 ## [0.2.0a1] - 2026-11-27
 
 ### Added
