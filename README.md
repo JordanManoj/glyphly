@@ -83,19 +83,39 @@ character error rate:
 | Cyrillic | Russian, Ukrainian | 5.0%, 1.2% |
 | Devanagari, Telugu | Hindi, Telugu | 1.4%, 4.2% |
 | Arabic script | Arabic, Persian | 5.3%, 6.3% |
-| **Not supported yet** | Hebrew, Bengali (and other scripts without an open model) | 83%, 76% |
+| **Not supported yet** | Hebrew, Armenian, Georgian (no open model yet) | 83% (Hebrew) |
 
-Average over the 20 supported languages: 1.4%. One sentence per language is a smoke test,
-not a full benchmark: real documents per language are on the roadmap.
+Average over the 20 languages measured this way: 1.4%. One sentence per language is a
+smoke test, not a full benchmark.
+
+**Indian scripts read word by word (new in 0.2).** Malayalam, Bengali, Assamese, Kannada,
+Gujarati, Gurmukhi (Punjabi) and Odia have no open line recognizer, so glyphly cuts each
+line into words and reads them with IndicPhotoOCR's word recognizers (converted to ONNX,
+about 35 MB each, downloaded only when a page needs one). These larger models are tried
+only for lines no line model reads surely, and the script that won the previous page is
+tried first. Measured on real scanned book pages from Wikisource (`bench/real.py`,
+human-proofread text, 12 pages each), median character error:
+
+| Language | Before (0.1) | glyphly 0.2 |
+| --- | --- | --- |
+| Bengali | 87% | 12% |
+| Assamese | not readable | 14% |
+| Malayalam (many 18th-19th century books) | 92% | 26% |
+| Punjabi | not readable | 28% |
+
+Real scans are much harder than drawn text (old typefaces, worn paper, page furniture the
+transcriptions leave out), so these numbers are not comparable with the table above.
 
 ## Status and roadmap
 
 - [x] Engine on ONNX Runtime with no system dependencies; rotated lines; word boxes
 - [x] Held-out and hard-suite results; two-column reading order; table rows
 - [x] 20 languages in 11 scripts, detected automatically
-- [ ] Table structure (cells), page orientation, real-scan benchmark
-- [ ] Hebrew, Bengali and other scripts without an open model
-- [ ] Release on PyPI; used by [gleanly](https://github.com/JordanManoj/gleanly) for OCR
+- [x] Seven more Indian scripts (Malayalam, Bengali, Assamese, Kannada, Gujarati,
+      Gurmukhi, Odia), read word by word
+- [x] Page orientation (sideways, upside down); real-scan benchmark in 34 languages
+- [x] Released on PyPI; [gleanly](https://github.com/JordanManoj/gleanly)'s OCR engine
+- [ ] Table structure (cells); Hebrew, Armenian, Georgian; better Arabic on old prints
 - [ ] glyphly's own trained recognition model
 - [ ] Real-scan benchmark; comparison with Docling, Marker and a paid OCR service
 

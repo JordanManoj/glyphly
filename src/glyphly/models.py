@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _MODELSCOPE = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6"
-# Same files, same fingerprints, attached to a glyphly release (used once the repo is public).
+# Same files, same fingerprints, attached to a glyphly release.
 _GITHUB = "https://github.com/JordanManoj/glyphly/releases/download/models-v1"
 
 

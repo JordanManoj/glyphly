@@ -4,6 +4,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+## [0.2.0a1] - 2026-11-27
+
 ### Added
 
 - Seven more Indian scripts: Malayalam, Bengali, Assamese, Kannada, Gujarati, Gurmukhi
