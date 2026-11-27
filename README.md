@@ -91,10 +91,14 @@ smoke test, not a full benchmark.
 **Indian scripts read word by word (new in 0.2).** Malayalam, Bengali, Assamese, Kannada,
 Gujarati, Gurmukhi (Punjabi) and Odia have no open line recognizer, so glyphly cuts each
 line into words and reads them with IndicPhotoOCR's word recognizers (converted to ONNX,
-about 35 MB each, downloaded only when a page needs one). These larger models are tried
-only for lines no line model reads surely, and the script that won the previous page is
-tried first. Measured on real scanned book pages from Wikisource (`bench/real.py`,
-human-proofread text, 12 pages each), median character error:
+about 35 MB each, downloaded on first use). **Name the language** to use them:
+`Reader(lang="ml")`, `Reader(lang=["auto", "bn"])` for pages mixing Bengali with English,
+or `glyphly read scan.jpg --lang ml`. Auto mode does not pick them by itself yet: a word
+model reads any script with high confidence (Malayalam's reads Hebrew and English lines at
+0.84-0.97), so its confidence cannot tell which script a line is in. A small script
+identifier that looks at the line image is being built for that. Measured on real scanned
+book pages from Wikisource (`bench/real.py`, human-proofread text, 12 pages each, language
+named), median character error:
 
 | Language | Before (0.1) | glyphly 0.2 |
 | --- | --- | --- |

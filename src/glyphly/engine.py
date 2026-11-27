@@ -316,7 +316,11 @@ class Reader:
             # sampled lines no line model read confidently (an Arabic or Cyrillic page
             # never loads them; a Malayalam page does).
             line_scripts = [k for k in models.SCRIPT_MODELS if k not in models.WORD_SCRIPTS]
-            for stage, scripts in enumerate((line_scripts, self._word_order())):
+            # Word models are used only for languages the caller names: they read any
+            # script confidently (Malayalam's reads Hebrew, Arabic and English lines at
+            # 0.84-0.97), so their confidence cannot tell which script a line is in.
+            named = [k for k in self._word_order() if k in self.wanted]
+            for stage, scripts in enumerate((line_scripts, named)):
                 lines = sample if stage == 0 else [i for i in sample if sure[i] < WORD_TRY]
                 if stage == 1:  # the longest unsure lines are enough to tell the script
                     lines = lines[:WORD_PROBE_LINES]
@@ -536,8 +540,10 @@ class Reader:
         if conf is not None and conf < UNSURE:
             steps.append(
                 f"low confidence ({conf:.2f}): the image may be blurred or too small, or the "
-                "text may be in a script glyphly cannot read yet (it reads Latin, Chinese, "
-                "Japanese, Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil, Telugu)"
+                "text may be in a script glyphly does not detect by itself (it reads Latin, "
+                "Chinese, Japanese, Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil, "
+                "Telugu; name the language for Malayalam, Bengali, Assamese, Kannada, "
+                "Gujarati, Punjabi or Odia, e.g. lang='ml')"
             )
         return page
 

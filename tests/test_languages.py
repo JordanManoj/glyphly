@@ -91,10 +91,21 @@ def test_malayalam_is_read_with_its_word_model(reader: Reader) -> None:
     draw = ImageDraw.Draw(img)
     draw.text((30, 40), "റെക്കോർഡ് ബാറ്റിങ്ങുമായി വൈഭവ് സൂര്യവംശി", fill="black", font=font)
     draw.text((30, 160), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ മാത്രം സംഭവിക്കുന്ന", fill="black", font=font)
-    page = reader.read(img)
+    page = Reader(lang=["auto", "ml"], download=False).read(img)
     assert page.rotation == 0
     assert all(line.script == "malayalam" for line in page.lines)
-    assert "ബാറ്റിങ്" in page.text  # PIL draws without shaping, so only some words survive
+    malayalam = sum("\u0d00" <= c <= "\u0d7f" for c in page.text)
+    assert malayalam > 0.8 * len(page.text.replace(" ", "").replace("\n", ""))
+    # PIL draws without shaping, so exact words vary by machine; the script must not
+
+
+def test_word_models_are_not_guessed_in_auto_mode(reader: Reader) -> None:
+    """Word models read any script confidently, so auto mode never picks them by itself."""
+    font = _font_or_skip(r"C:\Windows\Fonts\Nirmala.ttc")
+    img = Image.new("RGB", (1200, 160), "white")
+    ImageDraw.Draw(img).text((30, 40), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ", fill="black", font=font)
+    page = reader.read(img)
+    assert all(line.script != "malayalam" for line in page.lines)
 
 
 def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:

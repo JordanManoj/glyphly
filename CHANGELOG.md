@@ -12,9 +12,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   (Punjabi) and Odia, read word by word with IndicPhotoOCR's PARSeq recognizers converted to
   ONNX int8 (`tools/convert_parseq.py`). On real Malayalam book scans (Wikisource) the median
   character error goes from about 92% to 26%.
-- Script choice in two stages: the small line models first, the word models only for lines
-  none of them reads surely, compared by mean confidence; the last page's word script is
-  tried first and at most two word models stay loaded.
+- Word models are used for the languages you name (`lang="ml"`, `lang=["auto", "bn"]`,
+  `--lang ml`); auto mode does not guess them, because a word model reads any script with
+  high confidence (Malayalam's reads Hebrew, Arabic and English lines at 0.84-0.97). Among
+  named word scripts the one with the highest mean confidence wins; at most two word models
+  stay loaded.
 - ONNX Runtime's graph optimisations are saved next to each model on first load (word
   models load in 0.7 s instead of 3 s).
 - Real-scan benchmark (`bench/real.py`): validated Wikisource pages in 34 languages with
