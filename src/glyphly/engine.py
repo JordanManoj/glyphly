@@ -99,29 +99,34 @@ def _reader(session: Any) -> ReadFn:
 
 
 def _session(path: Path) -> Any:
-    """An ONNX Runtime session. The graph optimisations ONNX Runtime applies on loading
-    are saved next to the model the first time (per ONNX Runtime version), so later loads
-    skip them: a word model loads in 0.7 s instead of 3 s."""
+    """An ONNX Runtime session. The portable graph optimisations (constant folding, node
+    fusion) are saved next to the model the first time (per ONNX Runtime version), so
+    later loads skip them: a word model loads in 0.6 s instead of 3 s. CPU-specific layout
+    changes are never saved (a saved NCHWc layout failed on other machines); they are
+    redone at each load, which is cheap."""
     import onnxruntime as ort
 
-    opts = ort.SessionOptions()
-    opts.log_severity_level = 3
-    optimized = path.with_name(f"{path.stem}.ort{ort.__version__}.onnx")
-    if optimized.exists() and optimized.stat().st_mtime >= path.stat().st_mtime:
-        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_DISABLE_ALL
-        try:
-            return ort.InferenceSession(str(optimized), opts, providers=["CPUExecutionProvider"])
-        except Exception:  # unreadable leftover: rebuild it below
-            optimized.unlink(missing_ok=True)
-            opts = ort.SessionOptions()
-            opts.log_severity_level = 3
-    opts.optimized_model_filepath = str(optimized)
-    try:
-        return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
-    except Exception:  # e.g. a read-only cache folder: load without saving
+    def options() -> Any:
         opts = ort.SessionOptions()
         opts.log_severity_level = 3
-        return ort.InferenceSession(str(path), opts, providers=["CPUExecutionProvider"])
+        return opts
+
+    cpu = ["CPUExecutionProvider"]
+    optimized = path.with_name(f"{path.stem}.ext-ort{ort.__version__}.onnx")
+    if optimized.exists() and optimized.stat().st_mtime >= path.stat().st_mtime:
+        try:
+            return ort.InferenceSession(str(optimized), options(), providers=cpu)
+        except Exception:  # unreadable leftover: rebuild it below
+            optimized.unlink(missing_ok=True)
+    try:
+        opts = options()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+        opts.optimized_model_filepath = str(optimized)
+        ort.InferenceSession(str(path), opts, providers=cpu)
+        return ort.InferenceSession(str(optimized), options(), providers=cpu)
+    except Exception:  # e.g. a read-only cache folder: load without saving
+        optimized.unlink(missing_ok=True)
+        return ort.InferenceSession(str(path), options(), providers=cpu)
 
 
 # A line looks misread (wrong script) when it decodes to far fewer characters than its
