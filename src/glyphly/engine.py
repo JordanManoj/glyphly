@@ -177,6 +177,10 @@ WORD_CALIBRATION = 0.8
 # The script identifier's page vote (mean probability over the longest lines) needed to
 # use the word models of that script, or to report a script glyphly cannot read.
 PAGE_SCRIPT_SURE = 0.5
+# When the identifier is sure, only scripts with at least this share of the page vote may
+# re-read lines: similar scripts (Kannada and Telugu, Bengali and Devanagari) otherwise read
+# each other's lines confidently. Low enough to keep a second script of a mixed page.
+PAGE_SCRIPT_KEEP = 0.1
 
 
 def _mean(dec: Decoded) -> float:
@@ -302,8 +306,9 @@ class Reader:
             self._scripts[script] = _reader(_session(path))
         return self._scripts[script]
 
-    def _identify(self, crops: list[np.ndarray]) -> tuple[str, float]:
-        """The page's script by the script identifier, or ("", 0) if it is unavailable."""
+    def _identify(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
+        """The page's scripts by the script identifier, most likely first (empty if the
+        identifier is unavailable or the page has no long lines)."""
         if not self._sid_tried:
             self._sid_tried = True
             try:
@@ -312,9 +317,8 @@ class Reader:
             except models.ModelError:
                 self._missing.add("script identifier")
         if self._sid is None:
-            return "", 0.0
-        votes = self._sid.page(crops)
-        return votes[0] if votes else ("", 0.0)
+            return []
+        return self._sid.page(crops)
 
     def _reread(
         self,
@@ -348,9 +352,17 @@ class Reader:
             # English lines at 0.84-0.97), so their confidence cannot tell which script a
             # line is in. They are used for languages the caller names, and for the script
             # the script identifier sees on the page.
-            seen, prob = self._identify(crops)
+            votes = self._identify(crops)
+            seen, prob = votes[0] if votes else ("", 0.0)
             page_words: set[str] = set()
             if prob >= PAGE_SCRIPT_SURE:
+                allowed = {
+                    k
+                    for c, p in votes
+                    if p >= PAGE_SCRIPT_KEEP
+                    for k in scriptid.MODELS.get(c, [c])
+                }
+                line_scripts = [k for k in line_scripts if k in allowed or k in self.wanted]
                 found = scriptid.MODELS.get(seen, [seen])
                 page_words = {k for k in found if k in models.WORD_SCRIPTS}
                 if seen not in scriptid.DEFAULT and not any(
