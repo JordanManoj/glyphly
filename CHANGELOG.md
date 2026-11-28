@@ -14,6 +14,17 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
   default models (`glyphly download`). Training data and training: `tools/script_id_data.py`,
   `tools/train_script_id.py`.
 - Real-scan benchmark engine `glyphly-auto` (no language named).
+- Output formats: searchable PDF (image + invisible text layer, with an embedded 620-byte
+  invisible font made by `tools/make_glyphless_font.py`), ALTO v4 XML (valid against the
+  Library of Congress schema) and hOCR. `glyphly read -f pdf|alto|hocr -o FILE`;
+  `glyphly.export.to_pdf / to_alto / to_hocr`.
+- Real-scan benchmark engine `tesseract` (tessdata_best, language named).
+
+### Fixed
+
+- Kannada pages were read with the Telugu line model (similar letters, confident) although
+  the script identifier was sure of Kannada: when it is sure, only the scripts it sees on a
+  page may re-read its lines (also faster: the test suite runs in half the time).
 
 ## [0.2.0a2] - 2026-11-27
 

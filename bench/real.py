@@ -215,6 +215,73 @@ def _glyphly(mode: str) -> OcrFn:
     return run
 
 
+# Tesseract: its most accurate language data (tessdata_best, Apache-2.0), the language
+# named as Tesseract requires. Data is downloaded into bench/data/tessdata (git-ignored).
+TESS_LANG = {
+    "en": "eng", "fr": "fra", "de": "deu+deu_latf", "es": "spa", "it": "ita", "pt": "por",
+    "nl": "nld", "pl": "pol", "sv": "swe", "vi": "vie", "la": "lat", "ru": "rus",
+    "uk": "ukr", "be": "bel", "sr": "srp", "el": "ell", "ar": "ara", "fa": "fas",
+    "he": "heb", "hi": "hin", "mr": "mar", "sa": "san", "bn": "ben", "as": "asm",
+    "or": "ori", "pa": "pan", "gu": "guj", "ta": "tam", "te": "tel", "kn": "kan",
+    "ml": "mal", "zh": "chi_tra+chi_sim", "ko": "kor", "th": "tha",
+}  # fmt: skip
+TESSDATA_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main"
+
+
+def _tesseract_exe() -> str | None:
+    import shutil
+
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    for p in (r"C:\Program Files\Tesseract-OCR\tesseract.exe",):
+        if Path(p).is_file():
+            return p
+    return None
+
+
+def _tesseract() -> OcrFn | None:
+    import subprocess
+    import tempfile
+
+    exe = _tesseract_exe()
+    if exe is None:
+        print("tesseract is not installed", file=sys.stderr)
+        return None
+    data = DATA.parent / "tessdata"
+    data.mkdir(parents=True, exist_ok=True)
+
+    def ensure(code: str) -> None:
+        path = data / f"{code}.traineddata"
+        if not path.exists():
+            path.write_bytes(_get(f"{TESSDATA_URL}/{code}.traineddata"))
+
+    def run(img: Image.Image, lang: str) -> tuple[str, float | None]:
+        codes = TESS_LANG[lang]
+        for code in codes.split("+"):
+            ensure(code)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "page.png"
+            img.convert("RGB").save(src)
+            out = subprocess.run(
+                [exe, str(src), "stdout", "-l", codes, "--tessdata-dir", str(data),
+                 "-c", "tessedit_create_tsv=1"],
+                capture_output=True, timeout=600, check=False,
+            )  # fmt: skip
+        lines: dict[tuple[str, ...], list[str]] = {}
+        confs: list[float] = []
+        for row in out.stdout.decode("utf-8", "replace").splitlines()[1:]:
+            f = row.split("\t")
+            if len(f) < 12 or f[0] != "5" or not f[11].strip():
+                continue
+            lines.setdefault((f[2], f[3], f[4]), []).append(f[11])
+            confs.append(float(f[10]) / 100)
+        text = "\n".join(" ".join(words) for words in lines.values())
+        return text, (sum(confs) / len(confs) if confs else None)
+
+    return run
+
+
 def engines(names: list[str]) -> dict[str, OcrFn]:
     out: dict[str, OcrFn] = {}
     for name in names:
@@ -227,6 +294,10 @@ def engines(names: list[str]) -> dict[str, OcrFn]:
             fn = _rapidocr()
             if fn is not None:
                 out[name] = lambda img, lang, fn=fn: fn(img)
+        elif name == "tesseract":
+            tfn = _tesseract()
+            if tfn is not None:
+                out[name] = tfn
         else:
             print(f"unknown engine {name!r}", file=sys.stderr)
     return out

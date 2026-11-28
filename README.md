@@ -5,8 +5,8 @@ images into text, with every word's position and confidence. No Tesseract, no Op
 system programs: `pip install glyphly` brings NumPy, Pillow and ONNX Runtime, all as
 wheels for Windows, macOS and Linux.
 
-> **Pre-alpha.** The engine works and is measured, but the API may change and it is not on
-> PyPI yet. Feedback is very welcome.
+> **Alpha.** On PyPI (`pip install --pre glyphly`); the engine works and is measured, but
+> the API may still change. Feedback is very welcome.
 
 ```python
 import glyphly
@@ -19,10 +19,19 @@ for word in page.lines[0].words:
 ```
 
 ```bash
-glyphly read scan.png            # text
-glyphly read scan.png --json     # lines, words, boxes, confidences
-glyphly download                 # fetch the model files now, for offline use later
+glyphly read scan.png                         # text
+glyphly read scan.png --json                  # lines, words, boxes, confidences
+glyphly read p1.jpg p2.jpg -f pdf -o book.pdf # searchable PDF
+glyphly read scan.png -f alto -o scan.xml     # ALTO XML (libraries, archives)
+glyphly read scan.png -f hocr -o scan.hocr    # hOCR
+glyphly download                              # fetch the model files now, for offline use
 ```
+
+**Output formats.** Besides text and JSON, glyphly writes the standard OCR formats:
+searchable PDF (each image with an invisible text layer laid over its words, so the text
+can be selected, searched and copied), ALTO v4 XML (valid against the Library of Congress
+schema) and hOCR. From Python: `glyphly.export.to_pdf([(image, page), ...])`,
+`to_alto(pages)`, `to_hocr(pages)`.
 
 For many images, create one `glyphly.Reader()` and call `reader.read(...)` on each: the
 models load once.
@@ -127,9 +136,14 @@ real scanned pages it never saw in training it names the script correctly 94.2% 
       Gurmukhi, Odia), read word by word
 - [x] Page orientation (sideways, upside down); real-scan benchmark in 34 languages
 - [x] Released on PyPI; [gleanly](https://github.com/JordanManoj/gleanly)'s OCR engine
-- [ ] Table structure (cells); Hebrew, Armenian, Georgian; better Arabic on old prints
+- [x] Script identifier (glyphly's own model): Indian scripts without naming the language
+- [x] Searchable PDF, ALTO XML and hOCR output
+- [ ] Head-to-head real-scan comparison with Tesseract, PaddleOCR and EasyOCR (running)
+- [ ] Speed: 10-45 s per page on a CPU today
+- [ ] Hebrew, Fraktur, Georgian, Armenian, Sinhala, polytonic Greek; better Arabic on old
+      prints
 - [ ] glyphly's own trained recognition model
-- [ ] Real-scan benchmark; comparison with Docling, Marker and a paid OCR service
+- [ ] Column and table reading order on complex layouts (gazettes, newspapers)
 
 ## Development
 
