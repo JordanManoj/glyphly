@@ -4,6 +4,17 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## [Unreleased]
 
+### Added
+
+- Script identifier: glyphly's own 1.1 MB network tells which of 25 writing systems a page's
+  lines are in (94.2% of lines right on real scans it never saw). Auto mode now uses the
+  Malayalam, Bengali, Assamese, Kannada, Gujarati, Gurmukhi and Odia word models without
+  being told the language, and reports scripts it cannot read yet (Hebrew, Sinhala,
+  Georgian, Armenian, Khmer, Lao, Myanmar, Ethiopic) in `page.steps`. Downloaded with the
+  default models (`glyphly download`). Training data and training: `tools/script_id_data.py`,
+  `tools/train_script_id.py`.
+- Real-scan benchmark engine `glyphly-auto` (no language named).
+
 ## [0.2.0a2] - 2026-11-27
 
 ### Fixed

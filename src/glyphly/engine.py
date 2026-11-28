@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from glyphly import models
+from glyphly import models, scriptid
 from glyphly.detect import MAX_SIDE, TextBox, detect
 from glyphly.layout import reading_order
 from glyphly.recognize import Decoded, Span, charset, recognize, word_spans
@@ -174,6 +174,9 @@ WORD_CACHE = 2  # word models kept loaded between pages
 # character confidence is ~0.95 while 12-28% of characters are wrong (bench/real.py). Their
 # confidences are scaled so such pages land below 0.8, where readers are warned.
 WORD_CALIBRATION = 0.8
+# The script identifier's page vote (mean probability over the longest lines) needed to
+# use the word models of that script, or to report a script glyphly cannot read.
+PAGE_SCRIPT_SURE = 0.5
 
 
 def _mean(dec: Decoded) -> float:
@@ -263,6 +266,8 @@ class Reader:
         self._last_word: str | None = None  # word script that won the previous page
         self._disabled: set[str] = set()  # scripts never used (benchmarks compare without)
         self._word_lru: list[str] = []  # loaded word models, least recently used first
+        self._sid: scriptid.ScriptId | None = None
+        self._sid_tried = False
         self.max_side = max_side
         langs = [lang] if isinstance(lang, str) else list(lang)
         self.auto = "auto" in langs
@@ -297,6 +302,20 @@ class Reader:
             self._scripts[script] = _reader(_session(path))
         return self._scripts[script]
 
+    def _identify(self, crops: list[np.ndarray]) -> tuple[str, float]:
+        """The page's script by the script identifier, or ("", 0) if it is unavailable."""
+        if not self._sid_tried:
+            self._sid_tried = True
+            try:
+                path = models.ensure(models.SCRIPT_ID, download=self._download)
+                self._sid = scriptid.ScriptId(_session(path))
+            except models.ModelError:
+                self._missing.add("script identifier")
+        if self._sid is None:
+            return "", 0.0
+        votes = self._sid.page(crops)
+        return votes[0] if votes else ("", 0.0)
+
     def _reread(
         self,
         crops: list[np.ndarray],
@@ -325,10 +344,25 @@ class Reader:
             # sampled lines no line model read confidently (an Arabic or Cyrillic page
             # never loads them; a Malayalam page does).
             line_scripts = [k for k in models.SCRIPT_MODELS if k not in models.WORD_SCRIPTS]
-            # Word models are used only for languages the caller names: they read any
-            # script confidently (Malayalam's reads Hebrew, Arabic and English lines at
-            # 0.84-0.97), so their confidence cannot tell which script a line is in.
-            named = [k for k in self._word_order() if k in self.wanted]
+            # Word models read any script confidently (Malayalam's reads Hebrew, Arabic and
+            # English lines at 0.84-0.97), so their confidence cannot tell which script a
+            # line is in. They are used for languages the caller names, and for the script
+            # the script identifier sees on the page.
+            seen, prob = self._identify(crops)
+            page_words: set[str] = set()
+            if prob >= PAGE_SCRIPT_SURE:
+                found = scriptid.MODELS.get(seen, [seen])
+                page_words = {k for k in found if k in models.WORD_SCRIPTS}
+                if seen not in scriptid.DEFAULT and not any(
+                    k in models.SCRIPT_MODELS for k in found
+                ):
+                    steps.append(
+                        f"the page looks like {scriptid.name(seen)} script ({prob:.0%} sure), "
+                        "which glyphly cannot read yet; the text below is unreliable"
+                    )
+                elif page_words - set(self.wanted):
+                    steps.append(f"script identified: {scriptid.name(seen)} ({prob:.0%} sure)")
+            named = [k for k in self._word_order() if k in self.wanted or k in page_words]
             for stage, scripts in enumerate((line_scripts, named)):
                 lines = sample if stage == 0 else [i for i in sample if sure[i] < WORD_TRY]
                 if stage == 1:  # the longest unsure lines are enough to tell the script
@@ -551,10 +585,8 @@ class Reader:
         if conf is not None and conf < UNSURE:
             steps.append(
                 f"low confidence ({conf:.2f}): the image may be blurred or too small, or the "
-                "text may be in a script glyphly does not detect by itself (it reads Latin, "
-                "Chinese, Japanese, Cyrillic, Greek, Arabic, Devanagari, Korean, Thai, Tamil, "
-                "Telugu; name the language for Malayalam, Bengali, Assamese, Kannada, "
-                "Gujarati, Punjabi or Odia, e.g. lang='ml')"
+                "text may be in a script glyphly does not read well (naming the language, "
+                "e.g. lang='ml', helps when the script was not identified)"
             )
         return page
 

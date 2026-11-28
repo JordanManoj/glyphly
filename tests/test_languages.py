@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from glyphly import ModelError, Reader
 from glyphly.engine import logical_order
-from glyphly.models import SCRIPT_MODELS, home, script_for
+from glyphly.models import SCRIPT_ID, SCRIPT_MODELS, home, script_for
 
 
 def test_language_codes_map_to_scripts() -> None:
@@ -99,13 +99,36 @@ def test_malayalam_is_read_with_its_word_model(reader: Reader) -> None:
     # PIL draws without shaping, so exact words vary by machine; the script must not
 
 
-def test_word_models_are_not_guessed_in_auto_mode(reader: Reader) -> None:
-    """Word models read any script confidently, so auto mode never picks them by itself."""
+def _script_id_or_skip() -> None:
+    if not (home() / SCRIPT_ID.name).exists():
+        pytest.skip("the script identifier is not downloaded (glyphly download)")
+
+
+def test_malayalam_is_identified_in_auto_mode() -> None:
+    """No language named: the script identifier sees Malayalam and its word model reads it."""
     font = _font_or_skip(r"C:\Windows\Fonts\Nirmala.ttc")
-    img = Image.new("RGB", (1200, 160), "white")
-    ImageDraw.Draw(img).text((30, 40), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ", fill="black", font=font)
-    page = reader.read(img)
-    assert all(line.script != "malayalam" for line in page.lines)
+    _script_id_or_skip()
+    if not (home() / SCRIPT_MODELS["malayalam"].name).exists():
+        pytest.skip("the Malayalam model is not downloaded (glyphly download --all)")
+    img = Image.new("RGB", (1200, 300), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((30, 40), "റെക്കോർഡ് ബാറ്റിങ്ങുമായി വൈഭവ് സൂര്യവംശി", fill="black", font=font)
+    draw.text((30, 160), "ലോക ക്രിക്കറ്റിൽ ഒരിക്കൽ മാത്രം സംഭവിക്കുന്ന", fill="black", font=font)
+    page = Reader(download=False).read(img)
+    assert any("Malayalam" in s for s in page.steps)
+    assert all(line.script == "malayalam" for line in page.lines)
+
+
+def test_latin_page_uses_no_script_model() -> None:
+    """An English page is read by the default model alone."""
+    font = _font_or_skip(r"C:\Windows\Fonts\arial.ttf")
+    img = Image.new("RGB", (1200, 300), "white")
+    draw = ImageDraw.Draw(img)
+    draw.text((30, 40), "The city council approved the new budget today", fill="black", font=font)
+    draw.text((30, 160), "after a long meeting on Tuesday morning", fill="black", font=font)
+    page = Reader(download=False).read(img)
+    assert all(line.script == "default" for line in page.lines)
+    assert "budget" in page.text
 
 
 def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:
@@ -120,3 +143,5 @@ def test_unknown_script_is_not_flipped_and_is_flagged(reader: Reader) -> None:
     assert page.confidence is not None
     assert page.confidence < 0.8
     assert any("low confidence" in s for s in page.steps)
+    if (home() / SCRIPT_ID.name).exists():
+        assert any("Hebrew" in s and "cannot read" in s for s in page.steps)

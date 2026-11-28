@@ -191,20 +191,23 @@ def word_f1(ocr: str, truth: str) -> float:
 
 
 # --------------------------------------------------------------------------- engines
-def _glyphly(base: bool) -> OcrFn:
-    """glyphly in auto mode; ``base`` leaves out the word-level (PARSeq) script models, i.e.
-    glyphly 0.1.0a1, for before/after comparisons."""
+def _glyphly(mode: str) -> OcrFn:
+    """glyphly in one of three modes:
+
+    ``auto``: no language given (the script identifier picks the word models);
+    ``named``: word-script languages named, as ``lang=["auto", "ml"]``;
+    ``base``: without the word-level (PARSeq) script models, i.e. glyphly 0.1.0a1.
+    """
     from glyphly import Reader
     from glyphly.models import WORD_SCRIPTS, script_for
 
     holder: dict[str, Reader] = {}
 
     def run(img: Image.Image, lang: str) -> tuple[str, float | None]:
-        # Word-script languages are named, as a user must (auto mode does not guess them).
-        key = lang if not base and script_for(lang) in WORD_SCRIPTS else "auto"
+        key = lang if mode == "named" and script_for(lang) in WORD_SCRIPTS else "auto"
         if key not in holder:
             holder[key] = Reader(lang=["auto", key] if key != "auto" else "auto")
-            if base:
+            if mode == "base":
                 holder[key]._disabled = set(WORD_SCRIPTS)
         page = holder[key].read(img)
         return page.text, page.confidence
@@ -215,8 +218,9 @@ def _glyphly(base: bool) -> OcrFn:
 def engines(names: list[str]) -> dict[str, OcrFn]:
     out: dict[str, OcrFn] = {}
     for name in names:
-        if name in ("glyphly", "glyphly-base"):
-            out[name] = _glyphly(base=name == "glyphly-base")
+        if name in ("glyphly", "glyphly-base", "glyphly-auto"):
+            mode = {"glyphly": "named", "glyphly-base": "base", "glyphly-auto": "auto"}[name]
+            out[name] = _glyphly(mode)
         elif name == "rapidocr":
             from bench.ocr import _rapidocr
 

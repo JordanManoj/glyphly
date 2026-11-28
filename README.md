@@ -91,14 +91,11 @@ smoke test, not a full benchmark.
 **Indian scripts read word by word (new in 0.2).** Malayalam, Bengali, Assamese, Kannada,
 Gujarati, Gurmukhi (Punjabi) and Odia have no open line recognizer, so glyphly cuts each
 line into words and reads them with IndicPhotoOCR's word recognizers (converted to ONNX,
-about 35 MB each, downloaded on first use). **Name the language** to use them:
-`Reader(lang="ml")`, `Reader(lang=["auto", "bn"])` for pages mixing Bengali with English,
-or `glyphly read scan.jpg --lang ml`. Auto mode does not pick them by itself yet: a word
-model reads any script with high confidence (Malayalam's reads Hebrew and English lines at
-0.84-0.97), so its confidence cannot tell which script a line is in. A small script
-identifier that looks at the line image is being built for that. Measured on real scanned
-book pages from Wikisource (`bench/real.py`, human-proofread text, 12 pages each, language
-named), median character error:
+about 35 MB each, downloaded on first use). Auto mode finds them by itself with
+**glyphly's own script identifier** (below); naming the language (`Reader(lang="ml")`,
+`--lang ml`) still works and skips the guess. Measured on real scanned book pages from
+Wikisource (`bench/real.py`, human-proofread text, 12 pages each, language named), median
+character error:
 
 | Language | Before (0.1) | glyphly 0.2 |
 | --- | --- | --- |
@@ -109,6 +106,17 @@ named), median character error:
 
 Real scans are much harder than drawn text (old typefaces, worn paper, page furniture the
 transcriptions leave out), so these numbers are not comparable with the table above.
+
+**Script identifier (new in 0.2.0a3).** A word recognizer reads any script with high
+confidence (Malayalam's reads Hebrew and English lines at 0.84-0.97), so confidence cannot
+tell which script a page is in. glyphly's own small network (1.1 MB, trained with
+`tools/train_script_id.py` on lines drawn from Wikipedia text in 25 scripts plus lines of
+real scans) looks at the line images instead; a page's longest lines vote. On lines of
+real scanned pages it never saw in training it names the script correctly 94.2% of the time
+(Bengali, Kannada, Telugu, Gurmukhi 100%, Latin 98%, Cyrillic 98%, Arabic 94%, Malayalam
+92%; weakest: Hebrew 81%, Chinese 83%). It also recognises scripts glyphly cannot read yet
+(Hebrew, Sinhala, Georgian, Armenian, Khmer, Lao, Myanmar, Ethiopic) and says so in
+`page.steps` instead of returning confident-looking text.
 
 ## Status and roadmap
 

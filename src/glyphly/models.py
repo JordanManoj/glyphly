@@ -117,7 +117,7 @@ def _fetch(url: str, path: Path, sha256: str) -> str | None:
 
 def download_all(*, scripts: bool = False) -> list[Path]:
     """Fetch the default models, and every script model too when ``scripts`` is true."""
-    files = [DETECTOR, RECOGNIZER, *(SCRIPT_MODELS.values() if scripts else ())]
+    files = [DETECTOR, RECOGNIZER, SCRIPT_ID, *(SCRIPT_MODELS.values() if scripts else ())]
     return [ensure(m) for m in files]
 
 
@@ -187,6 +187,14 @@ SCRIPT_MODELS.update(
         ),
     }
 )
+# glyphly's own script identifier (tools/train_script_id.py): which of 25 writing systems
+# a line is in, so auto mode can pick word models and name scripts it cannot read.
+SCRIPT_ID = ModelFile(
+    "script_id_v1.onnx",
+    f"{_WORDS}/script_id_v1.onnx",
+    "d359b4474408ff3b5f3b894c4ef3b1369a52b2cb0c26b7649c8c046fd67a03fc",
+    1.1,
+)
 # scripts read word by word (larger models, tried only when no line model reads a line)
 WORD_SCRIPTS = {k for k, m in SCRIPT_MODELS.items() if "parseq" in m.name}
 RTL_SCRIPTS = {"arabic"}
@@ -223,6 +231,7 @@ __all__ = [
     "LANG_SCRIPT",
     "RECOGNIZER",
     "RTL_SCRIPTS",
+    "SCRIPT_ID",
     "SCRIPT_MODELS",
     "WORD_SCRIPTS",
     "ModelError",
